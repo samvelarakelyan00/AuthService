@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: auth_db_container
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - postgres_data2:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrations:
+    build:
+      context: .
+      args:
+        - ENV_STATE=${ENV_STATE}
+    container_name: auth_migrations_container
+    environment:
+      - ENV_STATE=${ENV_STATE}
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "cd /AuthServiceDocker/app/ &&
+             /AuthServiceDocker/.venv/bin/python -m alembic upgrade head"
+
+  fastapi-app:
+    build:
+      context: .
+      args:
+        - ENV_STATE=${ENV_STATE}
+    container_name: auth_service_container
+    ports:
+      - "8000:8000"
+    environment:
+      - ENV_STATE=${ENV_STATE}
+      - DEBUG=${DEBUG}
+      - DATABASE_URL=${DATABASE_URL}
+      - POOL_SIZE=${POOL_SIZE}
+      - MAX_OVERFLOW=${MAX_OVERFLOW}
+      - POOL_TIMEOUT=${POOL_TIMEOUT}
+      - POOL_RECYCLE=${POOL_RECYCLE}
+      - POOL_PRE_PING=${POOL_PRE_PING}
+      - SECRET_KEY=${SECRET_KEY}
+      - ALGORITHM=${ALGORITHM}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES}
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    command: >
+      sh -c "cd /AuthServiceDocker/app/ && 
+             /AuthServiceDocker/.venv/bin/python -m uvicorn main:app --port 8000 --host 0.0.0.0"
+
+volumes:
+  postgres_data2:

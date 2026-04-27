@@ -1,0 +1,26 @@
+# Python-generated files
+__pycache__/
+.idea
+.idea/*
+.idea/AuthService.iml
+.idea/misc.xml
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+.venv
+
+#.env*
+.env
+.env.local
+.env.prod
+.env.test
+.env*.local
+.env*.prod
+.env*.test
+# Keep this one committed:
+!.env.example
+
+docker-compose.override.yml

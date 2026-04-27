@@ -1,0 +1,62 @@
+AuthService/                          # Root (your project name)
+├── .venv/
+├── alembic/                          # Alembic migrations (unchanged)
+│   └── versions/
+├── src/                              # All source code (recommended for clean imports)
+│   ├── __init__.py
+│   ├── main.py                       # FastAPI app creation + lifespan + router includes
+│   │
+│   ├── core/                         # Shared infrastructure & cross-cutting concerns
+│   │   ├── __init__.py
+│   │   ├── config.py                 # Settings (DB, Auth, etc.)
+│   │   ├── security.py               # JWT, password hashing, OAuth2 scheme
+│   │   ├── dependencies/             # Common dependencies (get_db, etc.)
+│   │   │   ├── __init__.py
+│   │   │   ├── database.py
+│   │   │   └── auth.py               # get_current_user (moved here or per-domain)
+│   │   └── db/                       # Or keep as core/db/
+│   │       ├── __init__.py
+│   │       └── session.py
+│   │
+│   ├── domains/                      # Feature-based / modular domains (the main change)
+│   │   ├── __init__.py
+│   │   │
+│   │   ├── users/                    # Users domain (CRUD + basic user management)
+│   │   │   ├── __init__.py
+│   │   │   ├── models.py             # SQLAlchemy User model
+│   │   │   ├── schemas.py            # Pydantic schemas (UserCreate, UserOut, etc.)
+│   │   │   ├── service.py            # Business logic / repository (was UserCRUD)
+│   │   │   ├── router.py             # FastAPI router + endpoints for users CRUD
+│   │   │   └── dependencies.py       # Domain-specific dependencies (get_user_service)
+│   │   │
+│   │   └── auth/                     # Auth domain (signup, login, refresh tokens)
+│   │       ├── __init__.py
+│   │       ├── schemas.py            # Token, UserLogin, RefreshTokenRequest, etc.
+│   │       ├── service.py            # Auth-specific logic (authenticate, token creation)
+│   │       └── router.py             # Endpoints: /signup, /login, /refresh
+│   │
+│   └── (future domains)
+│       └── todos/
+│           ├── models.py
+│           ├── schemas.py
+│           ├── service.py
+│           ├── router.py
+│           └── dependencies.py
+│
+├── tests/                            # Tests organized by domain
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── domains/
+│   │   ├── users/
+│   │   └── auth/
+│   └── integration/
+│
+├── alembic.ini
+├── deploy.sh
+├── docker-compose.yml
+├── docker-compose.override.yml
+├── Dockerfile
+├── pyproject.toml
+├── uv.lock
+├── .env
+└── .env.example

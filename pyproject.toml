@@ -1,0 +1,17 @@
+[project]
+name = "authservice"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "alembic>=1.18.4",
+    "asyncpg>=0.31.0",
+    "black>=26.3.1",
+    "boto3>=1.42.90",
+    "boto3-stubs~=1.42.90",
+    "fastapi[all]>=0.136.0",
+    "psycopg2-binary>=2.9.11",
+    "pwdlib[argon2]>=0.3.0",
+    "pydantic>=2.13.2",
+    "pyjwt>=2.12.1",
+    "sqlalchemy>=2.0.49",
+]
