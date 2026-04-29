@@ -19,31 +19,9 @@ from pydantic_settings import (
 )
 
 import boto3
-from botocore.exceptions import ClientError
 
 
 print(os.getenv("ENV_STATE"))
-
-
-# def get_ssm_parameters(path_prefix: str = "/") -> dict:
-#     ssm = boto3.client("ssm", region_name="us-east-1")
-#
-#     # Рекомендуется использовать get_parameters_by_path для получения всех настроек разом
-#     paginator = ssm.get_paginator('get_parameters_by_path')
-#     params = {}
-#
-#     for page in paginator.paginate(Path=path_prefix, WithDecryption=True):
-#         try:
-#             for p in page['Parameters']:
-#                 # Превращаем '/my-app/prod/DATABASE_URL' в 'DATABASE_URL'
-#                 name = p['Name']
-#                 params[name] = p['Value']
-#         except ssm.exceptions.ParameterNotFound:
-#             print("The parameter does not exist.")
-#         except ClientError as e:
-#             print(f"An error occurred: {e}")
-#
-#     return params
 
 
 # =============================================
@@ -199,33 +177,6 @@ class SSMSettingsSource(PydanticBaseSettingsSource):
         return self.get_parameters_from_ssm()
 
 
-# class ProdSettings(GlobalSettings):
-#     model_config = SettingsConfigDict(
-#         env_file=None, # В проде файлы не используем
-#         extra="ignore"
-#     )
-#
-#     @classmethod
-#     def settings_customise_sources(
-#         cls,
-#         settings_cls: Type[BaseSettings],
-#         init_settings: PydanticBaseSettingsSource,
-#         env_settings: PydanticBaseSettingsSource,
-#         dotenv_settings: PydanticBaseSettingsSource,
-#         file_secret_settings: PydanticBaseSettingsSource,
-#     ) -> Tuple[PydanticBaseSettingsSource, ...]:
-#         # Определяем порядок приоритетов:
-#         # 1. Значения переданные при инициализации (init_settings)
-#         # 2. Переменные окружения ОС (env_settings)
-#         # 3. ДАННЫЕ ИЗ AWS SSM (наш кастомный источник)
-#         # 4. Данные из .env (dotenv_settings - для прода будет пусто)
-#         return (
-#             init_settings,
-#             env_settings,
-#             SSMSettingsSource(settings_cls),
-#             dotenv_settings
-#         )
-
 class ProdSettings(GlobalSettings):
     model_config = SettingsConfigDict(
         env_file=None,
@@ -258,30 +209,6 @@ class TestSettings(GlobalSettings):
 # =============================================
 # 6. FACTORY — AUTOMATIC ENVIRONMENT SWITCHING (world-best)
 # =============================================
-# @lru_cache(maxsize=1)
-# def get_settings() -> GlobalSettings:
-#     """Single source of truth. Cached for performance."""
-#     env_state = os.getenv("ENV_STATE", "local").lower().strip()
-#
-#     if env_state == "local":
-#         return LocalSettings()
-#
-#     elif env_state == "prod":
-#         # ПОЛУЧАЕМ ДАННЫЕ ИЗ SSM
-#         ssm_data = get_ssm_parameters(path_prefix="/")
-#         # Передаем их как именованные аргументы.
-#         # Pydantic приоритезирует аргументы конструктора выше, чем .env файлы.
-#         return ProdSettings(**ssm_data)
-#
-#     elif env_state == "test":
-#         return TestSettings()
-#
-#     else:
-#         raise ValueError(
-#             f"Invalid ENV_STATE={env_state}. "
-#             "Must be one of: local, prod, test"
-#         )
-
 @lru_cache(maxsize=1)
 def get_settings() -> GlobalSettings:
     """Single source of truth. Cached for performance."""
