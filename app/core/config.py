@@ -66,7 +66,14 @@ class TokenSettings(BaseModel):
     """JWT / Auth settings grouped together."""
     SECRET_KEY: SecretStr
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    ACCESS_TOKEN_TYPE: str = "access"
+    REFRESH_TOKEN_TYPE: str = "refresh"
+
+    # ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    # REFRESH_TOKEN_EXPIRE_MINUTES: int = 30 * 24 * 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 1
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = 2
 
 
 # =============================================

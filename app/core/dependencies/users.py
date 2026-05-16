@@ -1,5 +1,6 @@
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+import redis.asyncio as aioredis
 
 from .database import get_db
 from services.users_crud import UserCRUD
@@ -7,13 +8,15 @@ from services.auth_service import AuthService
 
 from core.security import Security
 from core.dependencies.security import get_security
+from core.dependencies.redis_dep import get_redis
 
 
 async def get_auth_service(
     db: AsyncSession = Depends(get_db),
+    redis_client: aioredis.Redis = Depends(get_redis),
     security: Security = Depends(get_security)
 ) -> AuthService:
-    return AuthService(db, security)
+    return AuthService(db=db, redis=redis_client, security=security)
 
 
 async def get_user_crud(db: AsyncSession = Depends(get_db)):

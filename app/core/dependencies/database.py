@@ -2,12 +2,12 @@
 from typing import AsyncGenerator
 
 # Non-Standard libs
+from fastapi import Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Own Modules
-from db.session import async_session
 
+async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    session_factory = request.app.state.db_session_factory
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with async_session() as session:
+    async with session_factory() as session:
             yield session

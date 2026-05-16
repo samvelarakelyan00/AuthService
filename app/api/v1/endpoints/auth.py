@@ -5,9 +5,8 @@ from typing import (
 
 # === Non-Standard libs ===
 from fastapi import (
-    APIRouter,
-    Depends,
-    status
+    APIRouter, Depends,
+    status, Body
 )
 
 # === Own Modules ===
@@ -21,13 +20,12 @@ from services.auth_service import (
 )
 # Schemas
 from schemas.user_schemas import (
-    UserCreateSchema,
-    UserOutSchema,
+    UserCreateSchema, UserOutSchema,
     UserLoginSchema
 )
 
 from schemas.token_schemas import (
-    AccessTokenOutSchema
+    TokenOutSchema
 )
 
 
@@ -47,10 +45,30 @@ async def signup(user_create_data: UserCreateSchema,
 
 @user_auth_router.post("/login",
                        status_code=status.HTTP_200_OK,
-                       response_model=AccessTokenOutSchema)
+                       response_model=TokenOutSchema)
 async def login(user_login_data: UserLoginSchema,
-                     user_auth_service: Annotated[AuthService, Depends(get_auth_service)]) -> AccessTokenOutSchema:
+                     user_auth_service: Annotated[AuthService, Depends(get_auth_service)]):
 
-    access_token = await user_auth_service.login(user_login_data)
+    tokens = await user_auth_service.login(user_login_data)
 
-    return access_token
+    return tokens
+
+
+@user_auth_router.post("/refresh", status_code=status.HTTP_200_OK, response_model=TokenOutSchema)
+async def refresh_token(
+    refresh_token_data: Annotated[str, Body(embed=True)],
+    user_auth_service: Annotated[AuthService, Depends(get_auth_service)]
+) -> TokenOutSchema:
+    return await user_auth_service.refresh_tokens(refresh_token_str=refresh_token_data)
+
+
+@user_auth_router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    refresh_token_data: Annotated[str, Body(embed=True)],
+    user_auth_service: Annotated[AuthService, Depends(get_auth_service)]
+):
+    """
+    Выход из системы. Удаляет Refresh-токен из Redis, делая его недействительным.
+    """
+    await user_auth_service.logout(refresh_token_str=refresh_token_data)
+    return None

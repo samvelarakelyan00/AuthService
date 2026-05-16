@@ -1,14 +1,20 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, RootModel
 
 
-class AccessTokenBaseSchema(BaseModel):
-    access_token: Annotated[str, Field(min_length=20, max_length=265)]
+class AccessTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_length=265)]]):
+    pass
 
 
-class AccessTokenOutSchema(AccessTokenBaseSchema):
-    token_type: Annotated[str, Literal["Bearer"]]
+class RefreshTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_length=265)]]):
+    pass
+
+
+class TokenOutSchema(BaseModel):
+    access_token: AccessTokenOutSchema
+    refresh_token: RefreshTokenOutSchema
+    token_type: Annotated[Literal["Bearer"], "Tokens type"] = "Bearer"
 
 
 class AccessTokenPayloadDataSchema(BaseModel):

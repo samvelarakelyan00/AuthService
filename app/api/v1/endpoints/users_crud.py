@@ -18,9 +18,6 @@ from services.users_crud import UserCRUD
 from schemas.user_schemas import (
     UserOutSchema
 )
-from schemas.token_schemas import (
-    AccessTokenBaseSchema
-)
 
 
 user_crud_router = APIRouter(tags=["Users CRUD"])
@@ -39,7 +36,7 @@ async def get_users(user_crud_service: Annotated[UserCRUD, Depends(get_user_crud
                       status_code=status.HTTP_200_OK,
                       response_model=List[UserOutSchema])
 async def get_users_by_token(user_crud_service: Annotated[UserCRUD, Depends(get_user_crud)],
-                    access_token: AccessTokenBaseSchema = Depends(get_current_user)):
+                             current_user: Annotated[UserOutSchema, Depends(get_current_user)]):
     users = await user_crud_service.get_all_users_by_token()
 
     return users
