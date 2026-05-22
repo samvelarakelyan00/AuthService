@@ -4,36 +4,22 @@ import uuid
 from typing import Dict, Any
 
 # === Non-Standard libs ===
-# password hash/verify
-from pwdlib import PasswordHash
-from pwdlib.hashers.argon2 import Argon2Hasher
-# jwt
 import jwt
 
 # === Own Modules ===
-from core.config import settings
+from core.settings import settings
 
 
-custom_argon2 = Argon2Hasher(
-    memory_cost=65536,
-    time_cost=3,
-    parallelism=4
-)
 
-password_hash = PasswordHash((custom_argon2,))
-
-
-class Security:
+class TokenSecurityManager:
+    """
+    Handles completely stateless JSON Web Token (JWT) lifecycle operations.
+    All methods are marked as static as they interact purely with external arguments
+    and global configurations rather than internal instance states.
+    """
     @staticmethod
-    def get_password_hash(password: str) -> str:
-        return password_hash.hash(password)
-
-    @staticmethod
-    def verify_password(plain_password: str, hashed_password: str) -> bool:
-        return password_hash.verify(plain_password, hashed_password)
-
-    @classmethod
-    def create_token(cls, user_id: str, expire_minutes: int, token_type: str) -> Dict[str, Any]:
+    def create_token(user_id: str, expire_minutes: int, token_type: str) -> Dict[str, Any]:
+        """Assembles, signs, and generates a structured JWT cryptographic payload token."""
         now = datetime.datetime.now(datetime.UTC)
         expire = now + datetime.timedelta(minutes=expire_minutes)
         token_jti = str(uuid.uuid4())
@@ -59,24 +45,31 @@ class Security:
             "ttl_seconds": ttl_seconds
         }
 
-    @classmethod
-    def create_access_token(cls, user_id: str) -> Dict[str, Any]:
-        return cls.create_token(
+    @staticmethod
+    def create_access_token(user_id: str) -> Dict[str, Any]:
+        """Generates a short-lived access authorization token wrapper."""
+        return TokenSecurityManager.create_token(
             user_id=user_id,
             expire_minutes=settings.tokens.ACCESS_TOKEN_EXPIRE_MINUTES,
             token_type=settings.tokens.ACCESS_TOKEN_TYPE,
         )
 
-    @classmethod
-    def create_refresh_token(cls, user_id: str) -> Dict[str, Any]:
-        return cls.create_token(
+    @staticmethod
+    def create_refresh_token(user_id: str) -> Dict[str, Any]:
+        """Generates a long-lived session renewal token wrapper."""
+        return TokenSecurityManager.create_token(
             user_id=user_id,
             expire_minutes=settings.tokens.REFRESH_TOKEN_EXPIRE_MINUTES,
             token_type=settings.tokens.REFRESH_TOKEN_TYPE,
         )
 
-    @classmethod
-    def verify_token(cls, token: str, expected_type: str) -> Dict[str, Any]:
+    @staticmethod
+    def verify_token(token: str, expected_type: str) -> Dict[str, Any]:
+        """
+        Decodes, cryptographically crypt-verifies, and validates an incoming JWT's payload signature.
+        Raises:
+            ValueError: On payload signature breach, expiration, or type mismatch.
+        """
         try:
             payload = jwt.decode(
                 token,
@@ -85,10 +78,10 @@ class Security:
             )
 
             if payload.get("token_type") != expected_type:
-                raise ValueError("Invalid token type")
+                raise ValueError("Invalid token type mapping context")
 
             return payload
         except jwt.ExpiredSignatureError:
-            raise ValueError("Token has expired")
+            raise ValueError("Token signature validation breached: Token expired")
         except jwt.InvalidTokenError:
-            raise ValueError("Invalid token")
+            raise ValueError("Token validation breach: Signature processing integrity error")

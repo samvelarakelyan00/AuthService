@@ -1,5 +1,8 @@
+# Standard libs
 from typing import Annotated, Literal
 
+# Non-Standard libs
+# Pydantic
 from pydantic import BaseModel, Field, EmailStr, RootModel
 
 

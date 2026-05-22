@@ -1,56 +1,75 @@
 from contextlib import asynccontextmanager
-
-from fastapi import FastAPI
 import uvicorn
-
+from fastapi import FastAPI
 from sqlalchemy import text
 
-from db.session import create_postgres_engine, create_postgres_sessionmaker
-from db.redis_connection import init_redis_client
+# Import the pre-instantiated database manager from your session module
+from db.session import db_manager
+from db.redis_connection import redis_manager
 
 from api.v1 import v1_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Инициализация инфраструктуры...")
+    print("Initializing application infrastructure...")
 
-    # 1. Настройка Postgres
-    engine = create_postgres_engine()
-    session_factory = create_postgres_sessionmaker(engine)
+    engine = db_manager.engine
+    session_factory = db_manager.session_factory
     app.state.db_engine = engine
     app.state.db_session_factory = session_factory
 
-    # Верификация Postgres
-    async with engine.connect() as conn:
-        await conn.execute(text("SELECT 1"))
-    print("✅ Postgres подключен и верифицирован!")
+    # 1. Verify Postgres Connection
+    try:
+        async with db_manager.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+        print("Database connection verified successfully!")
+    except Exception as error:
+        print(f"Database connection verification failed: {error}")
+        raise error
 
-    # 2. Настройка Redis
-    redis_client = init_redis_client()
-    app.state.redis_client = redis_client
+    app.state.redis_client = redis_manager.client
 
-    # Верификация Redis
-    await redis_client.ping()
-    print("✅ Redis подключен и верифицирован!")
+    # 2. Verify Redis Connection
+    try:
+        await redis_manager.client.ping()
+        print("Redis connection verified successfully!")
+    except Exception as error:
+        print(f"Redis connection verification failed: {error}")
+        raise error
 
-    yield  # Приложение работает и принимает запросы
+    yield  # Application is running
 
-    print("🛑 Закрытие соединений...")
-    # Корректное закрытие Postgres
-    await app.state.db_engine.dispose()
+    print("Initiating graceful connection teardown...")
 
-    # Корректное закрытие Redis
-    await app.state.redis_client.close()
-    await app.state.redis_client.connection_pool.disconnect()
-    print("💤 Все соединения безопасно закрыты.")
+    # Safely close all active connections held inside the SQLAlchemy engine pool
+    await db_manager.engine.dispose()
+
+    # Safely close the Redis client and disconnect its underlying connection pool
+    await redis_manager.client.close()
+    await redis_manager.pool.disconnect()
+
+    print("All infrastructure resources safely released.")
 
 
-app = FastAPI(lifespan=lifespan)
+# Initialize the FastAPI core instance with meta configurations and lifespan hook
+app = FastAPI(
+    title="Auth Service 2",
+    description="Second Auth Service for getting ready, testing",
+    version="0.0.1",
+    lifespan=lifespan
+)
 
 
 app.include_router(v1_router, prefix="/api")
 
 
+@app.get("/")
+def root():
+    """Simple health check endpoint."""
+    return {"msg": "Server is running..."}
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Using import string "main:app" allows the reload=True option to work perfectly
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

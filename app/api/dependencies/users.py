@@ -7,8 +7,8 @@ from services.users_crud import UserCRUD
 from services.auth_service import AuthService
 
 from core.security import Security
-from core.dependencies.security import get_security
-from core.dependencies.redis_dep import get_redis
+from api.dependencies.security import get_security
+from api.dependencies.redis_dep import get_redis
 
 
 async def get_auth_service(

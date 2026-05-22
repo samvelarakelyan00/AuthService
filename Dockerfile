@@ -4,9 +4,9 @@ FROM python:3.14-alpine
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy the application into the container.
-COPY . /AuthServiceDocker
+COPY . /AuthService
 
 # Install the application dependencies.
-WORKDIR /AuthServiceDocker
+WORKDIR /AuthService
 
 RUN uv sync --frozen --no-cache

@@ -1,5 +1,4 @@
 # === Standard libs ===
-from typing import Dict, Any
 
 # === Non-Standard libs ===
 from fastapi import Depends, HTTPException, status
@@ -8,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 # === Own Modules ===
-from core.dependencies.database import get_db
-from core.dependencies.security import get_security
+from api.dependencies.database import get_db
+from api.dependencies.security import get_security
 from core.security import Security
-from models.users import User
+from models import User
 from schemas.user_schemas import UserOutSchema
 
 
@@ -27,7 +26,7 @@ async def get_current_user(
     token = credentials.credentials
 
     try:
-        payload = security.verify_token(token, expected_type="access")
+        payload = security.tokens.verify_token(token, expected_type="access")
 
         user_id_str = payload.get("sub")
 

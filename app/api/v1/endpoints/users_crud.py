@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, status
 # === Own Modules ===
 from core.security import Security
 # Dependencies
-from core.dependencies import (
+from api.dependencies import (
     get_current_user,
     get_user_crud
 )

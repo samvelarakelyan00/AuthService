@@ -37,8 +37,8 @@ services:
       db:
         condition: service_healthy
     command: >
-      sh -c "cd /AuthServiceDocker/app/ &&
-             /AuthServiceDocker/.venv/bin/python -m alembic upgrade head"
+      sh -c "cd /AuthService/app/ &&
+             /AuthService/.venv/bin/python -m alembic upgrade head"
 
   fastapi-app:
     build:
@@ -64,8 +64,8 @@ services:
       migrations:
         condition: service_completed_successfully
     command: >
-      sh -c "cd /AuthServiceDocker/app/ && 
-             /AuthServiceDocker/.venv/bin/python -m uvicorn main:app --port 8000 --host 0.0.0.0"
+      sh -c "cd /AuthService/app/ && 
+             /AuthService/.venv/bin/python -m uvicorn main:app --port 8000 --host 0.0.0.0"
 
 volumes:
   postgres_data2:

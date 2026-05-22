@@ -11,7 +11,7 @@ from fastapi import (
 
 # === Own Modules ===
 # Dependencies
-from core.dependencies import (
+from api.dependencies import (
     get_auth_service
 )
 # Services

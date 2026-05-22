@@ -1,9 +1,12 @@
-from datetime import datetime, timezone
+# Standard libs
+from datetime import datetime
 from typing import Optional
 
+# Non-Standard libs
 from sqlalchemy.orm import mapped_column, Mapped
 from sqlalchemy import String, DateTime, Boolean, text
 
+# Own Modules
 from .base import Base
 
 

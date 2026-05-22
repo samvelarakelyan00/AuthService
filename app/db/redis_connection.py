@@ -1,14 +1,33 @@
+# Standard libs
+# ...
+
+# Non-Standard libs
 import redis.asyncio as aioredis
-from core.config import settings # Предполагаем, что REDIS_URL находится тут
 
-def init_redis_client() -> aioredis.Redis:
-    """Инициализирует асинхронный клиент Redis с пулом соединений."""
-    redis_pool = aioredis.ConnectionPool(
-        host="redis",  # или settings.redis.HOST
-        port=6379,
-        db=0,
-        decode_responses=True,
-        max_connections=50
-    )
+# Own Modules
+from core.settings import settings
 
-    return aioredis.Redis(connection_pool=redis_pool)
+
+class RedisConnectionManager:
+    """
+    Manages the lifecycle of the asynchronous Redis connection pool and client.
+
+    Acts as a centralized container for caching and key-value store operations,
+    ensuring unified pool configurations and proper client initialization.
+    """
+    def __init__(self) -> None:
+        # Initialize the connection pool using global configurations
+        self.pool = aioredis.ConnectionPool(
+            host=settings.redis.HOST,
+            port=settings.redis.PORT,
+            db=settings.redis.DB,
+            max_connections=settings.redis.MAX_CONNECTIONS,
+            decode_responses=True  # Automatically decodes responses to UTF-8 strings
+        )
+
+        # Initialize the asynchronous Redis client using the configured pool
+        self.client: aioredis.Redis = aioredis.Redis(connection_pool=self.pool)
+
+
+# Instantiate a single, global instance of the manager to be used across the application
+redis_manager = RedisConnectionManager()

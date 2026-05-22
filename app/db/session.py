@@ -4,29 +4,44 @@
 # Non-Standard libs
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
+    async_sessionmaker,
     create_async_engine,
-    async_sessionmaker
+    AsyncEngine,
 )
 
 # Own Modules
-from core.config import settings
+from core.settings import settings
 
 
-def create_postgres_engine():
-    """Создает экземпляр асинхронного движка SQLAlchemy."""
-    return create_async_engine(
-        settings.db.DATABASE_URL,
-        pool_size=settings.db.POOL_SIZE,
-        max_overflow=settings.db.MAX_OVERFLOW,
-        pool_timeout=settings.db.POOL_TIMEOUT,
-        pool_recycle=settings.db.POOL_RECYCLE,
-        pool_pre_ping=settings.db.POOL_PRE_PING
-    )
+class DatabaseSessionManager:
+    """
+    Manages the lifecycle of the SQLAlchemy asynchronous engine and session factory.
 
-def create_postgres_sessionmaker(engine):
-    """Создает фабрику сессий на основе переданного движка."""
-    return async_sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False
-    )
+    Acts as a centralized container for database operations, ensuring unified
+    pool configurations and proper engine initialization.
+    """
+    def __init__(self) -> None:
+        # Initialize the asynchronous engine with optimized pool settings
+        self.engine: AsyncEngine = create_async_engine(
+            url=str(settings.DATABASE_URL),
+            pool_size=settings.POOL_SIZE,
+            max_overflow=settings.MAX_OVERFLOW,
+            pool_timeout=settings.POOL_TIMEOUT,
+            pool_recycle=settings.POOL_RECYCLE,
+            pool_pre_ping=settings.POOL_PRE_PING,
+            future=True,          # Enforces SQLAlchemy 2.0 API compliance
+            echo=settings.DEBUG,  # SQL logging enabled only for local debugging
+        )
+
+        # Initialize the thread-safe, reusable async session factory
+        self.session_factory: async_sessionmaker[AsyncSession] = async_sessionmaker(
+            bind=self.engine,
+            class_=AsyncSession,
+            expire_on_commit=False,  # Prevents implicit async lazy-loading exceptions
+            autocommit=False,        # Requires explicit session.commit() calls
+            autoflush=False,         # Prevents premature flushes before explicit commits
+        )
+
+
+# Instantiate a single, global instance of the manager to be used across the application
+db_manager = DatabaseSessionManager()
