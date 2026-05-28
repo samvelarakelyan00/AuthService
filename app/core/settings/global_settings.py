@@ -11,9 +11,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from .postgres_settings import PostgresUrl, PostgresSettings
 from .redis_settings import RedisSettings
 from .tokens_settings import TokenSettings
+from .logging_settings import LoggingSettings  # NEW LOG MODULE INJECTION
 
 
-BASE_DIR = Path(__file__).resolve().parent.parent  # /AuthSerive/app/ → project root
+BASE_DIR = Path(__file__).resolve().parent.parent  # /AuthService/app/
 
 
 class GlobalSettings(BaseSettings):
@@ -42,6 +43,19 @@ class GlobalSettings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
 
+    # === Logging Engine Settings (flat for infrastructure injection) ===
+    LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(
+        default="INFO", validation_alias="LOG_LEVEL"
+    )
+    LOG_JSON_FORMAT: bool = Field(
+        default=False, validation_alias="LOG_JSON_FORMAT"
+    )
+    LOG_DIR: str = Field(
+        default=str(BASE_DIR.parent / "logs"), validation_alias="LOG_DIR"
+    )
+    LOG_MAX_BYTES: int = Field(default=10485760, validation_alias="LOG_MAX_BYTES")
+    LOG_BACKUP_COUNT: int = Field(default=5, validation_alias="LOG_BACKUP_COUNT")
+
     DEBUG: bool = False
 
     model_config = SettingsConfigDict(
@@ -55,7 +69,6 @@ class GlobalSettings(BaseSettings):
     @computed_field
     @property
     def db(self) -> PostgresSettings:
-        """settings.db.DATABASE_URL, settings.db.sync_url etc."""
         return PostgresSettings(
             DATABASE_URL=self.DATABASE_URL,
             POOL_SIZE=self.POOL_SIZE,
@@ -68,7 +81,6 @@ class GlobalSettings(BaseSettings):
     @computed_field
     @property
     def redis(self) -> RedisSettings:
-        """settings.redis.HOST, settings.redis.PORT etc."""
         return RedisSettings(
             HOST=self.REDIS_HOST,
             PORT=self.REDIS_PORT,
@@ -79,9 +91,23 @@ class GlobalSettings(BaseSettings):
     @computed_field
     @property
     def tokens(self) -> TokenSettings:
-        """settings.tokens.SECRET_KEY etc."""
         return TokenSettings(
             SECRET_KEY=self.SECRET_KEY,
             ALGORITHM=self.ALGORITHM,
             ACCESS_TOKEN_EXPIRE_MINUTES=self.ACCESS_TOKEN_EXPIRE_MINUTES,
+        )
+
+    @computed_field
+    @property
+    def logging(self) -> LoggingSettings:
+        """
+        Exposes structured validation namespace to the application context.
+        Usage: settings.logging.LOG_LEVEL
+        """
+        return LoggingSettings(
+            LOG_LEVEL=self.LOG_LEVEL,
+            LOG_JSON_FORMAT=self.LOG_JSON_FORMAT,
+            LOG_DIR=Path(self.LOG_DIR),
+            LOG_MAX_BYTES=self.LOG_MAX_BYTES,
+            LOG_BACKUP_COUNT=self.LOG_BACKUP_COUNT
         )
