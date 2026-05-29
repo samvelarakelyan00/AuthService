@@ -1,5 +1,5 @@
 # Standard libs
-# ...
+import logging
 
 # Non-Standard libs
 # FastAPI
@@ -26,11 +26,16 @@ from schemas.user_schemas import (
 from schemas.token_schemas import TokenOutSchema
 
 
+# Instantiate isolated service tracer bound to this module namespace
+logger = logging.getLogger(__name__)
+
+
 class AuthService:
     """
     Orchestrates authentication workflows including user registration, login sessions,
     token rotation lifecycle management, and secure multi-device termination.
     """
+
     def __init__(self, db: AsyncSession, redis: aioredis.Redis, security: Security) -> None:
         self.db = db
         self.redis = redis
@@ -41,11 +46,15 @@ class AuthService:
         Registers a new user record into the database.
         Offloads the computational weight of Argon2ID password hashing to a background threadpool.
         """
+        logger.info("Executing registration workflow for identity email: '%s'", user_create_data.email)
+
+        logger.debug("Offloading Argon2ID password hashing to run_in_threadpool...")
         # Execute password hashing off the main event loop to keep the async loop non-blocking
         hashed_password = await run_in_threadpool(
             self.security.passwords.hash,
             user_create_data.plain_password
         )
+        logger.debug("Password hashing execution completed successfully.")
 
         stmt = (
             insert(User)
@@ -57,11 +66,16 @@ class AuthService:
             .returning(User)
         )
 
+        logger.debug("Executing PostgreSQL database insert query statement.")
         result = await self.db.execute(stmt)
         new_user_model = result.scalar_one()
+        logger.debug("Database insert successful. Generated user identity primary key: '%s'", new_user_model.user_id)
 
+        logger.debug("Committing database transaction state.")
         await self.db.commit()
+        logger.debug("Database transaction commit finalized.")
 
+        logger.info("User successfully created with assigned ID: '%s'", new_user_model.user_id)
         return UserOutSchema.model_validate(new_user_model)
 
     async def login(self, user_login_data: UserLoginSchema) -> TokenOutSchema:
@@ -69,23 +83,31 @@ class AuthService:
         Validates user identity and provisions a fully-formed JWT access and refresh token pair.
         Saves the refresh session metadata in a Redis cache whitelist for rotation Tracking.
         """
+        logger.info("Processing login vector authentication request for email: '%s'", user_login_data.email)
+
         stmt = select(User).where(User.email == user_login_data.email)
+        logger.debug("Querying user record from database matching email filter.")
         result = await self.db.execute(stmt)
         user: User | None = result.scalar_one_or_none()
 
         if user is None:
+            logger.warning("Authentication failure: Identity matching email '%s' was not found.", user_login_data.email)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
 
+        logger.debug("User record found. Offloading Argon2 verification to run_in_threadpool...")
         # Offload intensive Argon2 validation away from the async primary loop
         password_correct = await run_in_threadpool(
             self.security.passwords.verify,
             user_login_data.password,
             user.hashed_password
         )
+        logger.debug("Argon2 verification thread evaluation completed with result: '%s'", password_correct)
+
         if not password_correct:
+            logger.warning("Authentication failure: Invalid credentials input for email '%s'.", user_login_data.email)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
@@ -93,14 +115,21 @@ class AuthService:
 
         user_id = str(user.user_id)
 
+        logger.debug("Generating cryptographically signed JWT keys via TokenSecurityManager.")
         # Generate tokens utilizing the static TokenSecurityManager layout
         access_data = self.security.tokens.create_access_token(user_id=user_id)
         refresh_data = self.security.tokens.create_refresh_token(user_id=user_id)
+        logger.debug("JWT Access and Refresh packages provisioned. Refresh JTI: '%s'", refresh_data["jti"])
 
         # Establish an active whitelist status record inside Redis
         redis_key = f"auth:refresh:{user_id}:{refresh_data['jti']}"
+        logger.debug("Writing token status validation key to Redis cache layer: '%s'", redis_key)
         await self.redis.set(redis_key, "active", ex=refresh_data["ttl_seconds"])
+        logger.debug("Redis state mutation finalized with expiration TTL set to %d seconds.",
+                     refresh_data["ttl_seconds"])
 
+        logger.info("Session successfully authorized. Tokens generated for User ID '%s' with JTI '%s'.", user_id,
+                    refresh_data['jti'])
         return TokenOutSchema(
             access_token=access_data["token"],
             refresh_token=refresh_data["token"]
@@ -112,18 +141,26 @@ class AuthService:
         Implements a atomic Redis pipeline grace period to safely mitigate front-end concurrency
         race conditions when multiple requests hit the server simultaneously.
         """
+        logger.debug("Received request to rotate refresh token vectors.")
         try:
+            logger.debug("Validating token signature package and checking expiration bounds.")
             payload = self.security.tokens.verify_token(refresh_token_str, expected_type="refresh")
         except ValueError as err:
+            logger.warning("Token rotation aborted: Signature validation failed with detail: '%s'", str(err))
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(err))
 
         user_id = payload.get("sub")
         token_jti = payload.get("jti")
+        logger.debug("Token envelope parsed successfully. Extracted User ID: '%s', JTI: '%s'", user_id, token_jti)
 
         redis_key = f"auth:refresh:{user_id}:{token_jti}"
+        logger.debug("Checking active database state whitelist inside Redis using key: '%s'", redis_key)
         token_status = await self.redis.get(redis_key)
+        logger.debug("Redis whitelist check returned raw session state status: '%s'", token_status)
 
         if not token_status:
+            logger.warning("Token rotation aborted: Whitelist record missing or expired in cache for JTI '%s'.",
+                           token_jti)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Refresh token is invalid or expired"
@@ -131,24 +168,34 @@ class AuthService:
 
         # Block duplicate reuse if the short-lived grace period has fully concluded
         if token_status == "rotated":
+            logger.critical(
+                "Security Warning: Detected potential token reuse attempt on already rotated JTI '%s' for User ID '%s'!",
+                token_jti, user_id)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Token already rotated. Please reuse the new pair."
             )
 
+        logger.debug("Generating target authorization child keys for rotation flow.")
         # Generate fresh authorization vectors
         new_access_data = self.security.tokens.create_access_token(user_id=user_id)
         new_refresh_data = self.security.tokens.create_refresh_token(user_id=user_id)
 
         new_redis_key = f"auth:refresh:{user_id}:{new_refresh_data['jti']}"
+        logger.debug("Constructed new child storage registration key target: '%s'", new_redis_key)
 
+        logger.debug("Opening atomic Redis transaction pipeline environment.")
         # Atomic Pipeline Execution: Transitions the old key state to avoid client-side drops
         async with self.redis.pipeline(transaction=True) as pipe:
             # Grant a 15-second grace period for ongoing parallel browser requests to resolve
             await pipe.set(redis_key, "rotated", ex=15)
             await pipe.set(new_redis_key, "active", ex=new_refresh_data["ttl_seconds"])
+            logger.debug("Executing transaction instructions inside Redis server pipeline...")
             await pipe.execute()
+        logger.debug("Redis pipeline operations completed and verified.")
 
+        logger.info("Token rotation completed. Shifted session from parent JTI '%s' to child JTI '%s' for User '%s'.",
+                    token_jti, new_refresh_data['jti'], user_id)
         return TokenOutSchema(
             access_token=new_access_data["token"],
             refresh_token=new_refresh_data["token"]
@@ -160,7 +207,9 @@ class AuthService:
         Bypasses expiration restrictions to strip session variables from Redis
         even if a signature has passed its valid lifetime duration.
         """
+        logger.debug("Executing manual session explicit logout pipeline.")
         try:
+            logger.debug("Analyzing cryptographic integrity bounds for token verification.")
             # First attempt a strict signature and lifetime check
             payload = self.security.tokens.verify_token(refresh_token_str, expected_type="refresh")
             user_id = payload.get("sub")
@@ -168,6 +217,7 @@ class AuthService:
         except ValueError as err:
             # If the signature is intact but simply expired, force decrypt to locate the JTI mapping
             if "expired" in str(err):
+                logger.debug("Logout token expired. Bypassing timeline evaluation to perform database cache eviction.")
                 try:
                     payload = jwt.decode(
                         refresh_token_str,
@@ -177,31 +227,47 @@ class AuthService:
                     )
                     user_id = payload.get("sub")
                     token_jti = payload.get("jti")
-                except Exception:
-                    # Terminate if the cryptographic envelope hash is corrupted
+                    logger.debug("Forced signature decoding successful. Extracted User ID: '%s', JTI: '%s'", user_id,
+                                 token_jti)
+                except Exception as decode_error:
+                    logger.warning("Logout termination aborted: Cryptographic envelope corrupt. Error: '%s'",
+                                   str(decode_error))
                     return
             else:
+                logger.warning("Logout signature check encountered invalid parameters: '%s'", str(err))
                 return
 
         # Purge target whitelist entry completely from active cache memory
         if user_id and token_jti:
             redis_key = f"auth:refresh:{user_id}:{token_jti}"
+            logger.debug("Evicting active session key identifier from Redis cache mapping: '%s'", redis_key)
             await self.redis.delete(redis_key)
-            print(f"Session auth:refresh:{user_id}:{token_jti} successfully evicted via Logout.")
+            logger.info("Session context 'auth:refresh:%s:%s' successfully evicted via manual user Logout.", user_id,
+                        token_jti)
 
     async def logout_from_all_devices(self, user_id: str) -> None:
         """
         Scans and terminates all active token whitelists matching the targeted user space.
         """
+        logger.warning("Initiating multi-device forced termination sequence for User ID: '%s'", user_id)
         pattern = f"auth:refresh:{user_id}:*"
         cursor = 0
+        total_evicted_keys = 0
+        logger.debug("Preparing to scan key spaces using cursor match pattern: '%s'", pattern)
 
         while True:
+            logger.debug("Executing asynchronous SCAN cluster lookup at cursor offset position: %d", cursor)
             # Paginate through keys safely using non-blocking SCAN clusters
             cursor, keys = await self.redis.scan(cursor, match=pattern, count=100)
             if keys:
+                logger.debug("SCAN match segment found. Bulk deleting keys: %s", keys)
                 await self.redis.delete(*keys)
+                total_evicted_keys += len(keys)
+
+            logger.debug("Next iterative lookup window index calculated at position: %d", cursor)
             if cursor == 0:
+                logger.debug("SCAN loops hit absolute memory boundary sequence.")
                 break
 
-        print(f"All active infrastructure sessions for user {user_id} have been invalidated.")
+        logger.info("Multi-device reset complete. Invalidated %d total active session keys for user '%s'.",
+                    total_evicted_keys, user_id)
