@@ -4,6 +4,7 @@
 # === Non-Standard libs ===
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
+from pwdlib.exceptions import UnknownHashError
 
 # === Own Modules ===
 from core.settings import settings
@@ -28,4 +29,7 @@ class PasswordSecurityManager:
 
     def verify(self, plain_password: str, hashed_password: str) -> bool:
         """Verifies a plain text password against its matching cryptographic hash."""
-        return self._password_hash.verify(plain_password, hashed_password)
+        try:
+            return self._password_hash.verify(plain_password, hashed_password)
+        except UnknownHashError:
+            return False

@@ -10,7 +10,6 @@ import jwt
 from core.settings import settings
 
 
-
 class TokenSecurityManager:
     """
     Handles completely stateless JSON Web Token (JWT) lifecycle operations.

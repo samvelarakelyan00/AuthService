@@ -7,6 +7,28 @@
 
 ---
 
+---
+
+## 🧪 Testing
+
+### Running Tests Locally (Recommended)
+You can run the full unit test suite locally from the root `/AuthService` directory using **uv**. Execute the following command to run tests with warning suppression and proper path resolution:
+
+```bash
+PYTHONPATH=app ENV_STATE=test uv run pytest tests/unit/ -v -p no:warnings
+```
+
+---
+
+### Docker Testing (*UNDER CONSTRUCTION*)
+Running tests inside the containerized environment is currently being integrated:
+```bash
+# Not fully supported yet
+docker compose exec app pytest
+```
+*Note: Separated comprehensive test documentation will be added in future updates.*
+
+
 - **FastAPI** 
 - **featuring JWT authentication**
 - **secure password hashing**
