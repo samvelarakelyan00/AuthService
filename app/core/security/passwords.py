@@ -5,6 +5,9 @@
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 
+# === Own Modules ===
+from core.settings import settings
+
 
 class PasswordSecurityManager:
     """
@@ -13,9 +16,9 @@ class PasswordSecurityManager:
     """
     def __init__(self) -> None:
         self._argon2_hasher = Argon2Hasher(
-            memory_cost=65536,
-            time_cost=3,
-            parallelism=4
+            memory_cost=settings.passwords.ARGON2_MEMORY_COST,
+            time_cost=settings.passwords.ARGON2_TIME_COST,
+            parallelism=settings.passwords.ARGON2_PARALLELISM
         )
         self._password_hash = PasswordHash((self._argon2_hasher,))
 

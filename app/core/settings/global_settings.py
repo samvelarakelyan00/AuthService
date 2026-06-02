@@ -11,7 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from .postgres_settings import PostgresUrl, PostgresSettings
 from .redis_settings import RedisSettings
 from .tokens_settings import TokenSettings
-from .logging_settings import LoggingSettings  # NEW LOG MODULE INJECTION
+from .logging_settings import LoggingSettings
+from .password_settings import PasswordSettings
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # /AuthService/app/
@@ -37,6 +38,11 @@ class GlobalSettings(BaseSettings):
     REDIS_PORT: int = Field(default=6379, validation_alias="REDIS_PORT")
     REDIS_DB: int = Field(default=0, validation_alias="REDIS_DB")
     REDIS_MAX_CONNECTIONS: int = Field(default=50, validation_alias="REDIS_MAX_CONNECTIONS")
+
+    # === Security / Password ===
+    ARGON2_MEMORY_COST: int = Field(default=65536, ge=2048, validation_alias="ARGON2_MEMORY_COST")
+    ARGON2_TIME_COST: int = Field(default=3, ge=1, validation_alias="ARGON2_TIME_COST")
+    ARGON2_PARALLELISM: int = Field(default=4, ge=1, validation_alias="ARGON2_PARALLELISM")
 
     # === Security / Token settings ===
     SECRET_KEY: SecretStr = Field(..., validation_alias='SECRET_KEY')
@@ -86,6 +92,19 @@ class GlobalSettings(BaseSettings):
             PORT=self.REDIS_PORT,
             DB=self.REDIS_DB,
             MAX_CONNECTIONS=self.REDIS_MAX_CONNECTIONS
+        )
+
+    @computed_field
+    @property
+    def passwords(self) -> PasswordSettings:
+        """
+        Exposes structured validation namespace for cryptographic workloads.
+        Usage: settings.passwords.ARGON2_MEMORY_COST
+        """
+        return PasswordSettings(
+            ARGON2_MEMORY_COST=self.ARGON2_MEMORY_COST,
+            ARGON2_TIME_COST=self.ARGON2_TIME_COST,
+            ARGON2_PARALLELISM=self.ARGON2_PARALLELISM
         )
 
     @computed_field
