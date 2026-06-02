@@ -33,6 +33,9 @@ services:
     environment:
       - ENV_STATE=${ENV_STATE}
       - DATABASE_URL=${DATABASE_URL}
+      - ARGON2_MEMORY_COST=${ARGON2_MEMORY_COST}
+      - ARGON2_TIME_COST=${ARGON2_TIME_COST}
+      - ARGON2_PARALLELISM=${ARGON2_PARALLELISM}
     depends_on:
       db:
         condition: service_healthy
@@ -67,6 +70,9 @@ services:
       - LOG_MAX_BYTES=${LOG_MAX_BYTES}
       - LOG_BACKUP_COUNT=${LOG_BACKUP_COUNT}
       - LOG_DIR=${LOG_DIR}
+      - ARGON2_MEMORY_COST=${ARGON2_MEMORY_COST}
+      - ARGON2_TIME_COST=${ARGON2_TIME_COST}
+      - ARGON2_PARALLELISM=${ARGON2_PARALLELISM}
     depends_on:
       migrations:
         condition: service_completed_successfully
