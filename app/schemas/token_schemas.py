@@ -16,7 +16,6 @@ class RefreshTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_le
 
 class TokenOutSchema(BaseModel):
     access_token: AccessTokenOutSchema
-    refresh_token: RefreshTokenOutSchema
     token_type: Annotated[Literal["Bearer"], "Tokens type"] = "Bearer"
 
 
