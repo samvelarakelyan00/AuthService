@@ -3,19 +3,19 @@ import logging
 
 # Non-Standard libs
 # FastAPI
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Response
 from fastapi.concurrency import run_in_threadpool
-
 # SqlAlchemy
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, insert
+from sqlalchemy.exc import IntegrityError
 # Redis
 import redis.asyncio as aioredis
 # JWT
 import jwt
 
 # Own Modules
-from core.security import Security  # Imported for structural type hinting
+from core.security import Security
 from core.settings import settings
 from models.users import User
 from schemas.user_schemas import (
@@ -24,7 +24,6 @@ from schemas.user_schemas import (
     UserLoginSchema
 )
 from schemas.token_schemas import TokenOutSchema
-
 
 # Instantiate isolated service tracer bound to this module namespace
 logger = logging.getLogger(__name__)
@@ -45,11 +44,11 @@ class AuthService:
         """
         Registers a new user record into the database.
         Offloads the computational weight of Argon2ID password hashing to a background threadpool.
+        Handles database integrity violations securely.
         """
         logger.info("Executing registration workflow for identity email: '%s'", user_create_data.email)
 
         logger.debug("Offloading Argon2ID password hashing to run_in_threadpool...")
-        # Execute password hashing off the main event loop to keep the async loop non-blocking
         hashed_password = await run_in_threadpool(
             self.security.passwords.hash,
             user_create_data.plain_password
@@ -67,21 +66,35 @@ class AuthService:
         )
 
         logger.debug("Executing PostgreSQL database insert query statement.")
-        result = await self.db.execute(stmt)
-        new_user_model = result.scalar_one()
-        logger.debug("Database insert successful. Generated user identity primary key: '%s'", new_user_model.user_id)
+        try:
+            result = await self.db.execute(stmt)
+            new_user_model = result.scalar_one()
+            logger.debug("Database insert successful. Generated user identity primary key: '%s'",
+                         new_user_model.user_id)
 
-        logger.debug("Committing database transaction state.")
-        await self.db.commit()
-        logger.debug("Database transaction commit finalized.")
+            logger.debug("Committing database transaction state.")
+            await self.db.commit()
+            logger.debug("Database transaction commit finalized.")
+
+        except IntegrityError as exc:
+            logger.warning(
+                "Registration conflict: Username or email already exists. Details: %s",
+                str(exc.orig)
+            )
+            await self.db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username or email already registered."
+            )
 
         logger.info("User successfully created with assigned ID: '%s'", new_user_model.user_id)
         return UserOutSchema.model_validate(new_user_model)
 
-    async def login(self, user_login_data: UserLoginSchema) -> TokenOutSchema:
+    async def login(self, user_login_data: UserLoginSchema, response: Response) -> TokenOutSchema:
         """
         Validates user identity and provisions a fully-formed JWT access and refresh token pair.
-        Saves the refresh session metadata in a Redis cache whitelist for rotation Tracking.
+        Saves the refresh session metadata in a Redis cache whitelist for rotation tracking.
+        Injects the refresh token into an HttpOnly, Secure cookie to mitigate XSS vulnerabilities.
         """
         logger.info("Processing login vector authentication request for email: '%s'", user_login_data.email)
 
@@ -91,14 +104,22 @@ class AuthService:
         user: User | None = result.scalar_one_or_none()
 
         if user is None:
-            logger.warning("Authentication failure: Identity matching email '%s' was not found.", user_login_data.email)
+            logger.warning("Authentication failed: Identity matching email '%s' not found.", user_login_data.email)
+
+            logger.debug("Executing dummy Argon2 verification to mitigate timing attack vectors...")
+            dummy_hash = "$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$dGVzdHBhc3N3b3Jk"
+            await run_in_threadpool(
+                self.security.passwords.verify,
+                user_login_data.password,
+                dummy_hash
+            )
+
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
             )
 
         logger.debug("User record found. Offloading Argon2 verification to run_in_threadpool...")
-        # Offload intensive Argon2 validation away from the async primary loop
         password_correct = await run_in_threadpool(
             self.security.passwords.verify,
             user_login_data.password,
@@ -107,7 +128,7 @@ class AuthService:
         logger.debug("Argon2 verification thread evaluation completed with result: '%s'", password_correct)
 
         if not password_correct:
-            logger.warning("Authentication failure: Invalid credentials input for email '%s'.", user_login_data.email)
+            logger.warning("Authentication failed: Invalid credentials input for email '%s'.", user_login_data.email)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
@@ -116,7 +137,6 @@ class AuthService:
         user_id = str(user.user_id)
 
         logger.debug("Generating cryptographically signed JWT keys via TokenSecurityManager.")
-        # Generate tokens utilizing the static TokenSecurityManager layout
         access_data = self.security.tokens.create_access_token(user_id=user_id)
         refresh_data = self.security.tokens.create_refresh_token(user_id=user_id)
         logger.debug("JWT Access and Refresh packages provisioned. Refresh JTI: '%s'", refresh_data["jti"])
@@ -128,11 +148,26 @@ class AuthService:
         logger.debug("Redis state mutation finalized with expiration TTL set to %d seconds.",
                      refresh_data["ttl_seconds"])
 
-        logger.info("Session successfully authorized. Tokens generated for User ID '%s' with JTI '%s'.", user_id,
-                    refresh_data['jti'])
+        logger.debug("Injecting refresh token into HttpOnly response cookie headers.")
+        # Check environment strictly via settings.ENV_STATE
+        is_production = settings.ENV_STATE == "prod"
+
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_data["token"],
+            httponly=True,
+            secure=is_production,  # True only if env is 'prod'
+            samesite="lax",
+            max_age=refresh_data["ttl_seconds"],
+            path="/",
+        )
+        logger.debug("Refresh token cookie parameters configured successfully.")
+
+        logger.info("Session successfully authorized. Access token returned and Refresh cookie set for User ID '%s'.",
+                    user_id)
+
         return TokenOutSchema(
-            access_token=access_data["token"],
-            refresh_token=refresh_data["token"]
+            access_token=access_data["token"]
         )
 
     async def refresh_tokens(self, refresh_token_str: str) -> TokenOutSchema:
