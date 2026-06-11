@@ -1,6 +1,6 @@
 # Standard libs
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Any
 
 # Non-Standard libs
 from pydantic import BaseModel, Field, field_validator

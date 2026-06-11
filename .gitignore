@@ -12,7 +12,6 @@ wheels/
 
 .venv
 
-#.env*
 .env
 .env.local
 .env.prod
