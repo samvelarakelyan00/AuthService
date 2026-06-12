@@ -4,33 +4,47 @@ from typing import Annotated
 # === Non-Standard libs ===
 from fastapi import (
     APIRouter, Depends,
-    status, Response, Cookie, HTTPException  # Added Cookie and Response
+    status, Response, Cookie, HTTPException
 )
 
 # === Own Modules ===
 # Dependencies
-from api.dependencies import (
-    get_auth_service
-)
+from api.dependencies import get_auth_service
+from api.dependencies.rate_limiter import SlidingWindowLogAuthLimiter
 # Services
-from services.auth_service import (
-    AuthService
-)
+from services.auth_service import AuthService
 # Schemas
-from schemas.user_schemas import (
-    UserCreateSchema, UserOutSchema,
-    UserLoginSchema
-)
-from schemas.token_schemas import (
-    TokenOutSchema
-)
+from schemas.user_schemas import UserCreateSchema, UserOutSchema, UserLoginSchema
+from schemas.token_schemas import TokenOutSchema
+# Settings
+from core.settings import settings
 
 user_auth_router = APIRouter(prefix='/auth', tags=["Users Auth"])
+
+# Global Rate Limiting Guards Instantiations
+signup_guard = SlidingWindowLogAuthLimiter(
+    times=settings.redis.SIGNUP_LIMIT_TIMES,
+    seconds=settings.redis.SIGNUP_LIMIT_SECONDS,
+    endpoint_tag="signup"
+)
+
+login_guard = SlidingWindowLogAuthLimiter(
+    times=settings.redis.LOGIN_LIMIT_TIMES,
+    seconds=settings.redis.LOGIN_LIMIT_SECONDS,
+    endpoint_tag="login"
+)
+
+refresh_guard = SlidingWindowLogAuthLimiter(
+    times=settings.redis.REFRESH_LIMIT_TIMES,
+    seconds=settings.redis.REFRESH_LIMIT_SECONDS,
+    endpoint_tag="refresh"
+)
 
 
 @user_auth_router.post("/signup",
                        status_code=status.HTTP_201_CREATED,
-                       response_model=UserOutSchema)
+                       response_model=UserOutSchema,
+                       dependencies=[Depends(signup_guard)])
 async def signup(user_create_data: UserCreateSchema,
                  user_auth_service: Annotated[AuthService, Depends(get_auth_service)]) -> UserOutSchema:
     new_user = await user_auth_service.signup(user_create_data)
@@ -39,7 +53,8 @@ async def signup(user_create_data: UserCreateSchema,
 
 @user_auth_router.post("/login",
                        status_code=status.HTTP_200_OK,
-                       response_model=TokenOutSchema)
+                       response_model=TokenOutSchema,
+                       dependencies=[Depends(login_guard)])
 async def login(user_login_data: UserLoginSchema,
                 response: Response,
                 user_auth_service: Annotated[AuthService, Depends(get_auth_service)]) -> TokenOutSchema:
@@ -49,7 +64,8 @@ async def login(user_login_data: UserLoginSchema,
 
 @user_auth_router.post("/refresh",
                        status_code=status.HTTP_200_OK,
-                       response_model=TokenOutSchema)
+                       response_model=TokenOutSchema,
+                       dependencies=[Depends(refresh_guard)])
 async def refresh_token(
         response: Response,
         user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
@@ -61,7 +77,6 @@ async def refresh_token(
             detail="Refresh token missing from cookies"
         )
 
-    # Passing token down to service (Later we can inject response here too for Token Rotation)
     return await user_auth_service.refresh_tokens(refresh_token_str=refresh_token)
 
 
@@ -72,9 +87,6 @@ async def logout(
         user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
         refresh_token: Annotated[str | None, Cookie()] = None
 ):
-    """
-    Logout. Removes the Refresh token from Redis and clears the cookie on the client.
-    """
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -82,7 +94,5 @@ async def logout(
         )
 
     await user_auth_service.logout(refresh_token_str=refresh_token)
-
-    # Erase the cookie from the client browser completely
     response.delete_cookie(key="refresh_token", path="/")
     return None

@@ -62,6 +62,15 @@ class GlobalSettings(BaseSettings):
     LOG_MAX_BYTES: int = Field(default=10485760, validation_alias="LOG_MAX_BYTES")
     LOG_BACKUP_COUNT: int = Field(default=5, validation_alias="LOG_BACKUP_COUNT")
 
+    # === Redis / Rate Limiting Defaults ===
+    REDIS_SIGNUP_LIMIT_TIMES: int = 3
+    REDIS_SIGNUP_LIMIT_SECONDS: int = 3600
+    REDIS_LOGIN_LIMIT_TIMES: int = 5
+    REDIS_LOGIN_LIMIT_SECONDS: int = 60
+    REDIS_REFRESH_LIMIT_TIMES: int = 10
+    REDIS_REFRESH_LIMIT_SECONDS: int = 60
+
+
     DEBUG: bool = False
 
     model_config = SettingsConfigDict(
@@ -91,7 +100,13 @@ class GlobalSettings(BaseSettings):
             HOST=self.REDIS_HOST,
             PORT=self.REDIS_PORT,
             DB=self.REDIS_DB,
-            MAX_CONNECTIONS=self.REDIS_MAX_CONNECTIONS
+            MAX_CONNECTIONS=self.REDIS_MAX_CONNECTIONS,
+            SIGNUP_LIMIT_TIMES=self.REDIS_SIGNUP_LIMIT_TIMES,
+            SIGNUP_LIMIT_SECONDS=self.REDIS_SIGNUP_LIMIT_SECONDS,
+            LOGIN_LIMIT_TIMES=self.REDIS_LOGIN_LIMIT_TIMES,
+            LOGIN_LIMIT_SECONDS=self.REDIS_LOGIN_LIMIT_SECONDS,
+            REFRESH_LIMIT_TIMES=self.REDIS_REFRESH_LIMIT_TIMES,
+            REFRESH_LIMIT_SECONDS=self.REDIS_REFRESH_LIMIT_SECONDS
         )
 
     @computed_field
