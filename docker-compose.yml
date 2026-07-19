@@ -73,6 +73,8 @@ services:
       - ARGON2_MEMORY_COST=${ARGON2_MEMORY_COST}
       - ARGON2_TIME_COST=${ARGON2_TIME_COST}
       - ARGON2_PARALLELISM=${ARGON2_PARALLELISM}
+      - RUN_TESTS=${RUN_TESTS:-false}
+      - TEST_TYPE=${TEST_TYPE:-all}
     depends_on:
       migrations:
         condition: service_completed_successfully

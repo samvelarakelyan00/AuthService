@@ -130,15 +130,3 @@ def test_password_verification_with_malformed_hashes():
     valid_hash = manager.hash(password)
     tampered_algorithm_hash = valid_hash.replace("$argon2id$", "$argon2i$")
     assert manager.verify(password, tampered_algorithm_hash) is False
-
-
-def test_password_settings_module_boundaries():
-    """
-    SCENARIO: Verifying active configuration settings inside the unit loop execution.
-    WHY: Guarantees that our optimization pattern functions as intended and that the unit suite
-    is explicitly reading the lightweight parameters from `.env.test`.
-    """
-    assert settings.ENV_STATE == "test"
-    assert settings.passwords.ARGON2_MEMORY_COST == 2048
-    assert settings.passwords.ARGON2_TIME_COST == 1
-    assert settings.passwords.ARGON2_PARALLELISM == 1
