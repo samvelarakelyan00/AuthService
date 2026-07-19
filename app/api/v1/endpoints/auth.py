@@ -10,67 +10,57 @@ from fastapi import (
 # === Own Modules ===
 # Dependencies
 from api.dependencies import get_auth_service
-from api.dependencies.rate_limiter import SlidingWindowLogAuthLimiter
 # Services
 from services.auth_service import AuthService
 # Schemas
 from schemas.user_schemas import UserCreateSchema, UserOutSchema, UserLoginSchema
 from schemas.token_schemas import TokenOutSchema
-# Settings
-from core.settings import settings
+# Rate Limiters
+from api.dependencies.auth_deps.auth_rate_limiters_dep import (
+    get_signup_rate_limiter,
+    get_login_rate_limiter,
+    get_refresh_token_rate_limiter
+)
+
 
 user_auth_router = APIRouter(prefix='/auth', tags=["Users Auth"])
-
-# Global Rate Limiting Guards Instantiations
-signup_guard = SlidingWindowLogAuthLimiter(
-    times=settings.redis.SIGNUP_LIMIT_TIMES,
-    seconds=settings.redis.SIGNUP_LIMIT_SECONDS,
-    endpoint_tag="signup"
-)
-
-login_guard = SlidingWindowLogAuthLimiter(
-    times=settings.redis.LOGIN_LIMIT_TIMES,
-    seconds=settings.redis.LOGIN_LIMIT_SECONDS,
-    endpoint_tag="login"
-)
-
-refresh_guard = SlidingWindowLogAuthLimiter(
-    times=settings.redis.REFRESH_LIMIT_TIMES,
-    seconds=settings.redis.REFRESH_LIMIT_SECONDS,
-    endpoint_tag="refresh"
-)
 
 
 @user_auth_router.post("/signup",
                        status_code=status.HTTP_201_CREATED,
-                       response_model=UserOutSchema,
-                       dependencies=[Depends(signup_guard)])
+                       response_model=UserOutSchema)
 async def signup(user_create_data: UserCreateSchema,
-                 user_auth_service: Annotated[AuthService, Depends(get_auth_service)]) -> UserOutSchema:
+                 user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
+                 _: Annotated[None, Depends(get_signup_rate_limiter)]
+) -> UserOutSchema:
+
     new_user = await user_auth_service.signup(user_create_data)
     return new_user
 
 
 @user_auth_router.post("/login",
                        status_code=status.HTTP_200_OK,
-                       response_model=TokenOutSchema,
-                       dependencies=[Depends(login_guard)])
+                       response_model=TokenOutSchema)
 async def login(user_login_data: UserLoginSchema,
                 response: Response,
-                user_auth_service: Annotated[AuthService, Depends(get_auth_service)]) -> TokenOutSchema:
+                user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
+                _: Annotated[None, Depends(get_login_rate_limiter)]
+) -> TokenOutSchema:
+
     tokens = await user_auth_service.login(user_login_data, response=response)
     return tokens
 
 
 @user_auth_router.post("/refresh",
                        status_code=status.HTTP_200_OK,
-                       response_model=TokenOutSchema,
-                       dependencies=[Depends(refresh_guard)])
+                       response_model=TokenOutSchema)
 async def refresh_token(
         response: Response,
         user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
+        _: Annotated[None, Depends(get_refresh_token_rate_limiter)],
         refresh_token: Annotated[str | None, Cookie()] = None
 ) -> TokenOutSchema:
+
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -87,6 +77,7 @@ async def logout(
         user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
         refresh_token: Annotated[str | None, Cookie()] = None
 ):
+
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

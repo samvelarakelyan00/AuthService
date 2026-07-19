@@ -9,6 +9,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
   db:
     image: postgres:16-alpine
     container_name: auth_db_container
@@ -39,9 +40,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    command: >
-      sh -c "cd /AuthService/app/ &&
-             /AuthService/.venv/bin/python -m alembic upgrade head"
+    entrypoint: /docker-entrypoint.sh
+    command: ["migrate"]
 
   fastapi-app:
     build:
@@ -76,9 +76,59 @@ services:
     depends_on:
       migrations:
         condition: service_completed_successfully
+    entrypoint: /docker-entrypoint.sh
+    command: []
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: test_runner
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      - TEST_TYPE=${TEST_TYPE:-all}
+      - RUN_TESTS=true
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - PYTHONPATH=/AuthService:/AuthService/app
+    depends_on:
+      redis:
+        condition: service_healthy
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    entrypoint: /bin/sh
     command: >
-      sh -c "cd /AuthService/app/ && 
-             /AuthService/.venv/bin/python -m uvicorn main:app --port 8000 --host 0.0.0.0"
+      -c "
+        cd /AuthService &&
+        echo 'Waiting for Redis...' &&
+        while ! nc -z redis 6379; do sleep 1; done &&
+        echo 'Redis is ready!' &&
+        echo 'Running tests...' &&
+        if [ \"$TEST_TYPE\" = 'unit' ]; then
+          uv run pytest tests/unit/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'integration' ]; then
+          uv run pytest tests/integration/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'component' ]; then
+          uv run pytest tests/component/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'end2end' ]; then
+          uv run pytest tests/end-to-end/ -v --tb=short
+        else
+          uv run pytest tests/ -v --tb=short
+        fi
+      "
+    profiles:
+      - tests
 
 volumes:
   postgres_data2:

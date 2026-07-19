@@ -115,8 +115,3 @@ def simulate_error():
         return {"result": result}
     except ZeroDivisionError:
         logging.getLogger("main").error("Critical failure event initiated on fault route.")
-
-
-if __name__ == "__main__":
-    # Using import string "main:app" allows the reload=True option to work perfectly
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

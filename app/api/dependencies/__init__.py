@@ -4,4 +4,4 @@ from .users import (
     get_auth_service
 )
 from .security import get_security
-from .auth import get_current_user
+from api.dependencies.auth_deps.auth import get_current_user
