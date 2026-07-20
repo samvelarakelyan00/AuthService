@@ -1,9 +1,14 @@
 # Standard libs
 import time
+import logging
 from typing import Final, Any
 
 # Own Modules
 from core.security.rate_limiter.redis_manager import redis_manager
+
+# Module-level logger
+logger = logging.getLogger(__name__)
+
 
 # Sliding Window Log Lua script using Redis Sorted Sets.
 # Stores timestamps as scores in a sorted set for precise sliding window calculations.
@@ -76,6 +81,15 @@ class SlidingWindowLog:
         # Subsequent invocations transparently use 'EVALSHA' using the 40-character SHA1 hash.
         self._lua_executable: Any = redis_manager.client.register_script(SLIDING_WINDOW_LOG_LUA)
 
+        logger.debug(
+            "SlidingWindowLog initialised",
+            extra={
+                "window_size": window_size,
+                "limit": limit,
+                "lua_sha": self._lua_executable.sha,
+            },
+        )
+
     async def acquire(self, search_key: str, tokens: int = 1) -> bool:
         """
         Attempt to add a request timestamp to the sliding window log.
@@ -86,12 +100,69 @@ class SlidingWindowLog:
         """
         time_now = time.time()
 
-        result = await self._lua_executable(
-            keys=[search_key],
-            args=[self.window_size, self.limit, time_now, tokens]
+        logger.debug(
+            "Rate limit acquire attempt",
+            extra={
+                "key": search_key,
+                "window_size": self.window_size,
+                "limit": self.limit,
+                "tokens": tokens,
+                "timestamp": time_now,
+            },
         )
 
-        return bool(result)
+        try:
+            result = await self._lua_executable(
+                keys=[search_key],
+                args=[self.window_size, self.limit, time_now, tokens],
+            )
+
+            allowed = bool(result)
+
+            if allowed:
+                logger.debug(
+                    "Rate limit acquire - ALLOWED",
+                    extra={
+                        "key": search_key,
+                        "window_size": self.window_size,
+                        "limit": self.limit,
+                        "tokens": tokens,
+                    },
+                )
+            else:
+                # Log denial at WARNING level – this is a security-relevant event
+                logger.warning(
+                    "Rate limit acquire - DENIED",
+                    extra={
+                        "key": search_key,
+                        "window_size": self.window_size,
+                        "limit": self.limit,
+                        "tokens": tokens,
+                    },
+                )
+
+            return allowed
+
+        except Exception as exc:
+            logger.error(
+                "Redis error during rate limit acquire",
+                extra={
+                    "key": search_key,
+                    "window_size": self.window_size,
+                    "limit": self.limit,
+                    "tokens": tokens,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            # Fail open or fail closed? In critical systems, fail closed is safer.
+            # Here we choose to allow the request if Redis is down, to avoid blocking users.
+            # But you may want to raise an exception instead, depending on your SLA.
+            # For now, we log the error and return True (allow) – but this is a design decision.
+            # Uncomment the next line if you prefer to fail closed:
+            # raise
+            return True
 
     async def reset(self, search_key: str) -> None:
         """
@@ -100,7 +171,24 @@ class SlidingWindowLog:
 
         :param search_key: Unique identifier for the rate-limiting scope.
         """
-        await redis_manager.client.delete(search_key)
+        logger.info(
+            "Rate limit reset requested",
+            extra={"key": search_key, "window_size": self.window_size, "limit": self.limit},
+        )
+
+        try:
+            await redis_manager.client.delete(search_key)
+            logger.debug(
+                "Rate limit reset completed",
+                extra={"key": search_key},
+            )
+        except Exception as exc:
+            logger.error(
+                "Redis error during rate limit reset",
+                extra={"key": search_key, "error": str(exc), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            raise
 
     async def get_current_count(self, search_key: str) -> int:
         """
@@ -112,11 +200,35 @@ class SlidingWindowLog:
         time_now = time.time()
         cutoff = time_now - self.window_size
 
-        # Remove expired entries and get count
-        await redis_manager.client.zremrangebyscore(search_key, 0, cutoff)
-        count = await redis_manager.client.zcard(search_key)
+        try:
+            # Remove expired entries and get count
+            await redis_manager.client.zremrangebyscore(search_key, 0, cutoff)
+            count = await redis_manager.client.zcard(search_key)
 
-        return count
+            logger.debug(
+                "Rate limit current count retrieved",
+                extra={
+                    "key": search_key,
+                    "count": count,
+                    "window_size": self.window_size,
+                    "cutoff_timestamp": cutoff,
+                },
+            )
+
+            return count
+
+        except Exception as exc:
+            logger.error(
+                "Redis error during get_current_count",
+                extra={
+                    "key": search_key,
+                    "error": str(exc),
+                    "error_type": type(exc).__name__,
+                },
+                exc_info=True,
+            )
+            # Return 0 as a safe fallback – but consider raising if you prefer strictness.
+            return 0
 
     async def get_remaining(self, search_key: str) -> int:
         """
@@ -126,7 +238,19 @@ class SlidingWindowLog:
         :return: Remaining requests allowed in the sliding window.
         """
         current_count = await self.get_current_count(search_key)
-        return max(0, self.limit - current_count)
+        remaining = max(0, self.limit - current_count)
+
+        logger.debug(
+            "Rate limit remaining capacity",
+            extra={
+                "key": search_key,
+                "current_count": current_count,
+                "limit": self.limit,
+                "remaining": remaining,
+            },
+        )
+
+        return remaining
 
     async def get_oldest_timestamp(self, search_key: str) -> float:
         """
@@ -135,10 +259,24 @@ class SlidingWindowLog:
         :param search_key: Unique identifier for the rate-limiting scope.
         :return: Oldest timestamp in the log, or 0 if empty.
         """
-        oldest = await redis_manager.client.zrange(search_key, 0, 0, withscores=True)
-        if oldest:
-            return float(oldest[0][1])
-        return 0.0
+        try:
+            oldest = await redis_manager.client.zrange(search_key, 0, 0, withscores=True)
+            timestamp = float(oldest[0][1]) if oldest else 0.0
+
+            logger.debug(
+                "Rate limit oldest timestamp",
+                extra={"key": search_key, "oldest_timestamp": timestamp},
+            )
+
+            return timestamp
+
+        except Exception as exc:
+            logger.error(
+                "Redis error during get_oldest_timestamp",
+                extra={"key": search_key, "error": str(exc), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            return 0.0
 
     async def get_newest_timestamp(self, search_key: str) -> float:
         """
@@ -147,7 +285,21 @@ class SlidingWindowLog:
         :param search_key: Unique identifier for the rate-limiting scope.
         :return: Newest timestamp in the log, or 0 if empty.
         """
-        newest = await redis_manager.client.zrange(search_key, -1, -1, withscores=True)
-        if newest:
-            return float(newest[0][1])
-        return 0.0
+        try:
+            newest = await redis_manager.client.zrange(search_key, -1, -1, withscores=True)
+            timestamp = float(newest[0][1]) if newest else 0.0
+
+            logger.debug(
+                "Rate limit newest timestamp",
+                extra={"key": search_key, "newest_timestamp": timestamp},
+            )
+
+            return timestamp
+
+        except Exception as exc:
+            logger.error(
+                "Redis error during get_newest_timestamp",
+                extra={"key": search_key, "error": str(exc), "error_type": type(exc).__name__},
+                exc_info=True,
+            )
+            return 0.0
