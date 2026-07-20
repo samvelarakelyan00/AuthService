@@ -4,7 +4,7 @@ from typing import Optional
 
 # Non-Standard libs
 from sqlalchemy.orm import mapped_column, Mapped
-from sqlalchemy import String, DateTime, Boolean, text
+from sqlalchemy import String, DateTime, Boolean, text, Index
 
 # Own Modules
 from .base import Base
@@ -21,3 +21,7 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=text("NOW()"))
     user_agent: Mapped[Optional[str]] = mapped_column(String(255))
     ip_address: Mapped[Optional[str]] = mapped_column(String(45))
+
+    __table_args__ = (
+        Index('ix_refresh_tokens_user_id_revoked', 'user_id', 'is_revoked'),
+    )

@@ -103,13 +103,3 @@ coverage: ## Run tests with coverage
 .PHONY: build
 build: ## Build images without starting
 	$(DOCKER_COMPOSE) build
-
-
-
-# docker compose down -v
-# docker compose rm -f
-# docker volume prune -f
-
-# docker compose --profile tests build --no-cache
-
-# docker compose --profile tests run --rm test-runner
