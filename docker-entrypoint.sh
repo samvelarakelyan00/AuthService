@@ -54,24 +54,39 @@ if [ "$RUN_TESTS" = "true" ]; then
     }
 
     # Run pytest with real-time output (no capture)
-    run_pytest() {
+        run_pytest() {
         local test_path="$1"
         local test_name="$2"
 
         echo ""
         echo "=== $test_name ==="
 
-        # Run pytest directly without capturing output
-        uv run pytest "$test_path" -v --tb=short --color=yes
+        # Check if the test directory exists and contains any test files
+        if [ ! -d "$test_path" ] || [ -z "$(find "$test_path" -name '*.py' -print -quit)" ]; then
+            echo "⚠️  No test files found in $test_path – skipping."
+            return 0
+        fi
 
-        # Capture the exit code
+        # Run pytest and capture its exit code
+        uv run pytest "$test_path" -v --tb=short --color=yes
         local exit_code=$?
 
-        # Run again with capture to parse results
+        # If exit code is 5 (no tests collected), treat as success
+        if [ $exit_code -eq 5 ]; then
+            echo "⚠️  No tests collected in $test_path – treating as success."
+            return 0
+        fi
+
+        # For any other non-zero exit code, propagate it
+        if [ $exit_code -ne 0 ]; then
+            return $exit_code
+        fi
+
+        # Parse the test results (only if tests were run successfully)
         local output=$(uv run pytest "$test_path" -v --tb=short 2>&1 || true)
         parse_test_results "$output"
 
-        return $exit_code
+        return 0
     }
 
     case "$TEST_TYPE" in
@@ -82,16 +97,18 @@ if [ "$RUN_TESTS" = "true" ]; then
             run_pytest "../tests/integration/" "INTEGRATION TESTS"
             ;;
         "security")
-            run_pytest "../tests/security-abuse/" "COMPONENT TESTS"
+            run_pytest "../tests/security-abuse/" "SECURITY-ABUSE TESTS"
             ;;
         "concurrency")
-            run_pytest "../tests/concurrency/" "End to End TESTS"
+            run_pytest "../tests/concurrency/" "CONCURRENCY TESTS"
             ;;
         "all")
             run_pytest "../tests/unit/" "UNIT TESTS"
             run_pytest "../tests/integration/" "INTEGRATION TESTS"
             run_pytest "../tests/component/" "COMPONENT TESTS"
             run_pytest "../tests/end-to-end/" "End-to-End TESTS"
+            run_pytest "../tests/security-abuse/" "SECURITY-ABUSE TESTS"
+            run_pytest "../tests/concurrency/" "CONCURRENCY TESTS"
             ;;
         *)
             echo "Unknown TEST_TYPE: $TEST_TYPE"

@@ -52,6 +52,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
       - auth_service_logs:/AuthService/logs
     environment:
       - ENV_STATE=${ENV_STATE}
@@ -125,6 +126,10 @@ services:
           uv run pytest tests/component/ -v --tb=short
         elif [ \"$TEST_TYPE\" = 'end2end' ]; then
           uv run pytest tests/end-to-end/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'security' ]; then
+          uv run pytest tests/security-abuse/ -v --tb=short
+        elif [ \"$TEST_TYPE\" = 'concurrency' ]; then
+          uv run pytest tests/concurrency/ -v --tb=short
         else
           uv run pytest tests/ -v --tb=short
         fi

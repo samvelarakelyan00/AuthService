@@ -37,6 +37,12 @@ up-integration: ## Start containers with integration tests only
 up-end2end: ## Start containers with end to end tests only
 	RUN_TESTS=true TEST_TYPE=component $(DOCKER_COMPOSE) up --build
 
+up-security: ## Start containers with end to end tests only
+	RUN_TESTS=true TEST_TYPE=security $(DOCKER_COMPOSE) up --build
+
+up-concurrency: ## Start containers with end to end tests only
+	RUN_TESTS=true TEST_TYPE=concurrency $(DOCKER_COMPOSE) up --build
+
 up-component: ## Start containers with end to end tests only
 	RUN_TESTS=true TEST_TYPE=end2end $(DOCKER_COMPOSE) up --build
 
@@ -68,7 +74,13 @@ test-integration: ## Run integration tests locally
 	$(DOCKER_COMPOSE) exec app sh -c "cd /AuthService && uv run --python /AuthService/app/.venv/bin/python pytest tests/integration/ -v --tb=short"
 
 test-end2end: ## Run end2end tests locally
-	$(DOCKER_COMPOSE) exec app sh -c "cd /AuthService && uv run --python /AuthService/app/.venv/bin/python pytest tests/end2end-abuse/ -v --tb=short"
+	$(DOCKER_COMPOSE) exec app sh -c "cd /AuthService && uv run --python /AuthService/app/.venv/bin/python pytest tests/end2end/ -v --tb=short"
+
+test-security: ## Run security tests locally
+	$(DOCKER_COMPOSE) exec app sh -c "cd /AuthService && uv run --python /AuthService/app/.venv/bin/python pytest tests/security-abuse/ -v --tb=short"
+
+test-concurrency: ## Run concurrency tests locally
+	$(DOCKER_COMPOSE) exec app sh -c "cd /AuthService && uv run --python /AuthService/app/.venv/bin/python pytest tests/concurrency/ -v --tb=short"
 
 test-component: ## Run component tests locally
 	$(DOCKER_COMPOSE) exec app sh -c "cd /AuthService && uv run --python /AuthService/app/.venv/bin/python pytest tests/component/ -v --tb=short"
@@ -87,6 +99,12 @@ test-with-docker-component: ## Run component tests in isolated Docker container
 
 test-with-docker-end2end: ## Run end to end tests in isolated Docker container
 	RUN_TESTS=true TEST_TYPE=end2end $(DOCKER_COMPOSE_TEST) run --rm test-runner
+
+test-with-docker-security: ## Run end to end tests in isolated Docker container
+	RUN_TESTS=true TEST_TYPE=security $(DOCKER_COMPOSE_TEST) run --rm test-runner
+
+test-with-docker-concurrency: ## Run end to end tests in isolated Docker container
+	RUN_TESTS=true TEST_TYPE=concurrency $(DOCKER_COMPOSE_TEST) run --rm test-runner
 
 status: ## Show container status
 	$(DOCKER_COMPOSE) ps

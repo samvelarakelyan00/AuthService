@@ -1,5 +1,6 @@
 # Standard libs
 import time
+import uuid
 import logging
 from typing import Final, Any
 
@@ -12,12 +13,15 @@ logger = logging.getLogger(__name__)
 
 # Sliding Window Log Lua script using Redis Sorted Sets.
 # Stores timestamps as scores in a sorted set for precise sliding window calculations.
+# The script now accepts a unique_suffix (ARGV[5]) to guarantee that concurrent
+# requests with identical timestamps do not overwrite each other's members.
 SLIDING_WINDOW_LOG_LUA: Final[str] = """
 local key = KEYS[1]
 local window_size = tonumber(ARGV[1])  -- Window size in seconds
 local limit = tonumber(ARGV[2])        -- Maximum requests per window
 local now = tonumber(ARGV[3])          -- Current timestamp
 local requested = tonumber(ARGV[4])    -- Number of requests to count
+local unique_suffix = ARGV[5]          -- Unique string to differentiate concurrent requests
 
 -- Calculate the cutoff timestamp
 local cutoff = now - window_size
@@ -30,9 +34,9 @@ local current_count = redis.call('ZCARD', key)
 
 -- Check if the request would exceed the limit
 if current_count + requested <= limit then
-    -- Add the new request timestamp
+    -- Add the new request timestamp, using the unique_suffix to avoid collisions
     for i = 1, requested do
-        redis.call('ZADD', key, now, now .. ':' .. i)
+        redis.call('ZADD', key, now, now .. ':' .. unique_suffix .. ':' .. i)
     end
 
     -- Set expiry on the key (window_size * 2 to ensure it lives long enough)
@@ -99,6 +103,9 @@ class SlidingWindowLog:
         :return: True if the request is within limits, False if rate-limited.
         """
         time_now = time.time()
+        # Generate a unique suffix to prevent member collisions in Redis ZADD
+        # when concurrent requests share the exact same timestamp.
+        unique_suffix = uuid.uuid4().hex
 
         logger.debug(
             "Rate limit acquire attempt",
@@ -108,13 +115,14 @@ class SlidingWindowLog:
                 "limit": self.limit,
                 "tokens": tokens,
                 "timestamp": time_now,
+                "suffix": unique_suffix,
             },
         )
 
         try:
             result = await self._lua_executable(
                 keys=[search_key],
-                args=[self.window_size, self.limit, time_now, tokens],
+                args=[self.window_size, self.limit, time_now, tokens, unique_suffix]
             )
 
             allowed = bool(result)
