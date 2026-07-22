@@ -170,7 +170,7 @@ class AuthService:
             access_token=access_data["token"]
         )
 
-    async def refresh_tokens(self, refresh_token_str: str) -> TokenOutSchema:
+    async def refresh_tokens(self, refresh_token_str: str, response: Response) -> TokenOutSchema:
         """
         Executes a secure refresh token rotation flow.
         Implements a atomic Redis pipeline grace period to safely mitigate front-end concurrency
@@ -216,6 +216,17 @@ class AuthService:
         new_access_data = self.security.tokens.create_access_token(user_id=user_id)
         new_refresh_data = self.security.tokens.create_refresh_token(user_id=user_id)
 
+        is_production = settings.ENV_STATE == "prod"
+        response.set_cookie(
+            key="refresh_token",
+            value=new_refresh_data["token"],
+            httponly=True,
+            secure=is_production,
+            samesite="lax",
+            max_age=new_refresh_data["ttl_seconds"],
+            path="/",
+        )
+
         new_redis_key = f"auth:refresh:{user_id}:{new_refresh_data['jti']}"
         logger.debug("Constructed new child storage registration key target: '%s'", new_redis_key)
 
@@ -231,10 +242,8 @@ class AuthService:
 
         logger.info("Token rotation completed. Shifted session from parent JTI '%s' to child JTI '%s' for User '%s'.",
                     token_jti, new_refresh_data['jti'], user_id)
-        return TokenOutSchema(
-            access_token=new_access_data["token"],
-            refresh_token=new_refresh_data["token"]
-        )
+
+        return TokenOutSchema(access_token=new_access_data["token"])
 
     async def logout(self, refresh_token_str: str) -> None:
         """

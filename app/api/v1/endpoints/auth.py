@@ -67,7 +67,7 @@ async def refresh_token(
             detail="Refresh token missing from cookies"
         )
 
-    return await user_auth_service.refresh_tokens(refresh_token_str=refresh_token)
+    return await user_auth_service.refresh_tokens(refresh_token_str=refresh_token, response=response)
 
 
 @user_auth_router.post("/logout",
