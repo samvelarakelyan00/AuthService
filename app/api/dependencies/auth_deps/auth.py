@@ -60,13 +60,6 @@ async def get_current_user(
             detail="User not found"
         )
 
-    # Проверка флага активности (раскомментируйте, если поле is_active добавлено в модель)
-    # if not user.is_active:
-    #     raise HTTPException(
-    #         status_code=status.HTTP_403_FORBIDDEN,
-    #         detail="Account is deactivated"
-    #     )
-
     print(f"User with user_id {user_id} wants to get data!")
 
     return UserOutSchema.model_validate(user)

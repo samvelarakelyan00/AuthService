@@ -29,5 +29,4 @@ def get_security() -> Security:
     return Security()
 
 
-# Instantiate the global master instance for the application
 security = get_security()
