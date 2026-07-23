@@ -1,0 +1,156 @@
+"""
+Store the user's frequently useful data in a token (heavyweight)
+"""
+
+-------------
+   Performance Optimization:
+
+   !!! ✅ done !!! -> Now service have 2 auth dependencies:
+   get_current_user_id (lightweight) and get_current_user (heavyweight)
+
+Remove the redundant SQL query from get_current_user.
+Currently, for every request to any protected endpoint,
+your get_current_user dependency executes SELECT * FROM users WHERE user_id = ....
+If you hit 10,000 requests per second to the API, you will crash PostgreSQL with these redundant SELECT queries.
+Why did we implement JWT if we are still hitting the database to fetch the ID?World-class solution: Split the dependencies.
+Create a lightweight get_current_user_id dependency that only parses the JWT (running in the backend's memory in microseconds)
+for regular endpoints.Use the heavyweight get_current_user dependency (which queries the DB) only where you actually need
+the entire user object (e.g., user profile).
+"""
+
+"""
+Fix Rate Limiter testing: tables are not exists in postgres test container
+"""
+
+"""
+⚠️ Critical Drawbacks & Gaps – Must Fix Immediately
+1. Token Management – Refresh Token Persistence Mismatch
+Issue: The RefreshToken model exists in the database, but it is never used. All refresh‑token logic lives solely in Redis (whitelist). This creates two problems:
+No persistent audit trail of refresh tokens (revocation history, user‑agent/IP tracking).
+If Redis is cleared or fails, all refresh tokens are invalidated without a fallback. While Redis is ephemeral by design, you lose the ability to query historical tokens for forensic analysis.
+Recommendation: Either use the DB table as the source of truth and Redis as a cache, or clearly state that Redis is the sole store and remove the unused model. In a world‑class system, you want both: Redis for fast lookup and DB for logging/audit.
+    To make "refresh_tokens" table and its index valuable, we must start using it for three critical responsibilities:
+        1) Audit Trail & Forensics (Security Compliance). Where: In login(), after generating a new refresh token, we write a record to this table (user_id, token hash or jti, expires_at, user_agent, ip_address, is_revoked=False).
+        2) Admin / User Device Management. Where: In your logout_from_all_devices(user_id), you would query this table to find all active refresh tokens for that user, mark them as revoked=True, and simultaneously delete the Redis entries.
+        3) Fallback Validation (Resilience). Where: In refresh_tokens(), before checking Redis, or as a fallback if Redis is unreachable, you can query the DB:
+
+2. JWT Secret Management & Rotation
+SECRET_KEY is a SecretStr – good. But rotation is not supported. A single secret for all tokens means if compromised, all tokens are immediately vulnerable.
+Best practice: Use a key‑rotation strategy (e.g., support multiple secrets with versioning, or short‑lived keys via AWS KMS).
+
+3. Refresh Token Cookie – Missing Path & Domain Explicitly Set
+In login, you set path="/" – acceptable. But you don't set domain, which might cause issues across subdomains. Also, you don't set secure to True in production – you do based on settings.ENV_STATE == "prod", but you should also set samesite='lax' correctly (you do).
+However, you do not handle cookie expiration on logout (you delete, good) nor do you set max_age on refresh for the cookie; you do, but consider using expires as well for compatibility.
+
+4. Logout All Devices – Potential DoS / Performance
+logout_from_all_devices uses SCAN with count=100 and deletes keys in batches.
+Issue: For a user with thousands of sessions, this loop may block the event loop if many deletes happen sequentially. Although you're using async, each delete(*keys) is a single Redis command with many keys, which is fine, but if the user has 10k+ tokens, the loop could take seconds.
+Recommendation: Use UNLINK (async delete) to avoid blocking, and consider a background task for large deletions.
+
+5. Rate Limiting – Email Extraction Relies on request.json()
+In RateLimitGuard, you call await request.json() to extract email. This consumes the request body. If the endpoint also expects JSON (like login/signup), it's fine, but if the body is large, this causes memory overhead. Also, if the body is malformed, you raise 400 – which is okay.
+However, you are calling request.json() after the IP check, but before the account check. If the account check fails, you still consumed the body, which is fine. But there is a subtle issue: request.json() can only be called once; if the endpoint handler later also reads the body (e.g., via UserLoginSchema), FastAPI will raise an error because the stream is already read. This is a critical bug: In FastAPI, the request body can only be consumed once unless you use request.stream() or request.body().
+Fix: You must not call request.json() in the dependency if the route handler also expects a Pydantic model. Instead, parse the body in the dependency and store it in request.state, or use a custom dependency that reads the body and passes it along. Alternatively, you can read the body only once in the dependency and then pass the parsed data to the route, but that breaks the declarative schema.
+
+6. Password Validation – Currently Commented Out
+In UserCreateSchema, plain_password is a simple str – the strong password validation (StrongPassword) is commented out. This is a security gap – you must enforce complexity.
+
+7. Error Handling & Logging of Sensitive Data
+Logging sometimes includes user_id and jti – which is fine. But ensure no tokens or passwords are logged. I didn't see any leakage, but double‑check.
+Exception messages are sometimes too generic (detail="Invalid email or password") – good to avoid user enumeration.
+
+8. Dependency Injection Overlap
+✅ done importing security instance from /core/security/__init__.py to /api/dependencies/security.py, not creating one more instance.
+You have two get_security functions: one in core/security/__init__.py (cached) and another in api/dependencies/security.py (also cached). They essentially do the same. Could unify.
+
+9. No Database Index for user_id in RefreshToken Model
+✅ done
+The RefreshToken model has user_id indexed (good), but it lacks a composite index on (user_id, token) or (user_id, is_revoked) for efficient lookups.
+
+10. Missing Email Verification & Password Reset Flows
+A production auth service must have email verification and password reset (with secure tokens). Currently absent.
+
+11. No Multi‑Factor Authentication (MFA)
+No TOTP, SMS, or WebAuthn support. This is a must for high‑security environments.
+
+12. Social / OAuth2 Login (Google, Apple, etc.)
+Not implemented. A modern auth service must support OAuth2/OIDC providers.
+
+13. No Account Lockout / Brute‑Force Protection Beyond Rate Limiting
+Rate limiting is per IP and per email, but after repeated failures, you might want to temporarily lock the account or require CAPTCHA. This is not present.
+
+14. Refresh Token Rotation – If the Old Token is Stolen
+✅ done -> now at /refresh time new refresh token successfully sets into cookie
+Your rotation flow invalidates the old token by setting it to "rotated" with a 15s TTL. If an attacker uses the old token within that 15s window, the "rotated" status will block it. However, if the attacker and legitimate client both try concurrently, the first one to rotate wins; the other gets an error. This is acceptable, but you must ensure that after rotation, the new token is issued and the client updates its storage. The current implementation returns both access_token and refresh_token in the response body – which is fine, but you also set the refresh token in the cookie; however, the /refresh endpoint does not set the new cookie – it only returns it in the JSON body. That means the client must manually update the cookie, which breaks the cookie‑based approach.
+Fix: In /refresh, you should also set the new refresh token as an HttpOnly cookie, just like in login. Otherwise, the cookie becomes stale and the client may send the old one next time.
+
+15. No CSRF Protection for State‑Changing Endpoints
+✅ done -> servers are protected from CSRF attack, because all auth endpoints are post, refresh token sends with cookie HTTP-Only, same-site: LAX
+Since refresh tokens are in cookies, and you use SameSite=Lax, it's decent. But for endpoints like logout, you might want to also require a CSRF token if they are not idempotent.
+
+16. Database Session Management – No Explicit Rollback on Exceptions
+In signup, you rollback on IntegrityError – good. But in other places (like login), you don't rollback; but there's no write, so it's fine. However, in refresh_tokens, you don't touch the DB, only Redis, so okay. But general guidance: ensure all DB operations are wrapped in try/except with rollback.
+
+17. No Monitoring / Metrics
+No OpenTelemetry, Prometheus, or health check endpoints beyond the root. A production service needs liveness/readiness probes and metrics.
+
+18. No Graceful Shutdown Handling
+When the container stops, the app should allow in‑flight requests to finish (uvicorn handles this if you use --timeout-keep-alive). But you might want to clean up Redis connections on shutdown (though Redis client handles that).
+
+19. What’s missing?
+✅ done
+No rate‑limiter tests – you should test that the guard correctly blocks excessive requests.
+
+✅ not done yet
+No integration tests (e.g., full HTTP endpoints with real DB/Redis).
+No component tests
+No end‑to‑end tests for flows like signup→login→refresh→logout.
+No test coverage measurement (though you have coverage target in Makefile).
+"""
+
+
+"""
+🚀 Strategic Recommendations – Path to World‑Class Status
+A. Immediate Fixes (Security & Functionality)
+Unify refresh token storage: either use DB exclusively or remove the table. I recommend using both: DB as source of truth (for audit, revocation, user‑agent logging) and Redis as cache for fast lookups during rotation. This is a major architectural decision.
+Fix the request body consumption issue in RateLimitGuard: either read the body only once, store in request.state, and let the route use that, or use a custom dependency that returns the parsed body.
+Re‑enable password complexity validation in UserCreateSchema.
+In /refresh, also set the new refresh token as a cookie to maintain consistency.
+Add a proper logout endpoint that also deletes the cookie (you already do, but ensure it's called).
+Implement email verification – send a signed token via email, verify before allowing login.
+Implement password reset flow – secure token with short expiry.
+
+B. Architectural Enhancements
+Introduce an AuditService – log all critical events (login, logout, token refresh, password change) to a structured log or a separate table.
+Add a User status field – active, suspended, email_verified. Block inactive accounts.
+Implement MFA – start with TOTP (RFC 6238) using pyotp; later WebAuthn.
+Add OAuth2/OIDC connectors – use authlib or fastapi‑security to integrate with Google, GitHub, Apple.
+Support API keys / service‑to‑service authentication – separate from user auth.
+
+C. Operational Resilience
+Implement circuit breakers for Redis and DB calls (use tenacity).
+Add health check endpoint (/health) that verifies DB and Redis connectivity.
+Implement graceful shutdown to flush logs and close connections.
+Add Prometheus metrics for request counts, latencies, token issuance, rate‑limit hits.
+Use asyncpg connection pool retry logic – retry on transient errors.
+
+D. Testing & CI/CD
+Write comprehensive unit, integration, and end‑to‑end tests:
+Unit: service logic, rate limiter, token generation.
+Integration: DB/Redis interactions, route validation.
+E2E: full flow with a test client.
+Use pytest‑asyncio and time‑machine to test expiration.
+Setup GitHub Actions or similar to run tests on PR.
+
+E. Documentation & Developer Experience
+Add API reference with examples (already have OpenAPI).
+Provide a Postman collection.
+Document the token flow and cookie handling clearly.
+
+F. Security Hardening
+Rotate secrets automatically via AWS Secrets Manager or KMS.
+Limit login attempts beyond rate limiting – implement progressive delays or CAPTCHA.
+Enforce HTTPS in production (already via secure cookie).
+Use jwt with RS256 or ES256 instead of HS256 for better scalability (though HS256 is fine if you have a single secret).
+Implement device fingerprinting – store a hash of user‑agent + IP (or allow client to supply a device ID) to detect token theft.
+"""
