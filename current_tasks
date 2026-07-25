@@ -1,5 +1,9 @@
 """
-Store the user's frequently useful data in a token (heavyweight)
+✅ done
+Store the user's frequently useful data in a token (lightweight)
+
+Add to the users table roles and is_active, and store these data to access token payload too. This will used for
+email verification also (is_active).
 """
 
 -------------

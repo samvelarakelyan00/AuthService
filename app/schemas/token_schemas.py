@@ -6,11 +6,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, EmailStr, RootModel
 
 
-class AccessTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_length=265)]]):
+class AccessTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_length=500)]]):
     pass
 
 
-class RefreshTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_length=265)]]):
+class RefreshTokenOutSchema(RootModel[Annotated[str, Field(min_length=20, max_length=500)]]):
     pass
 
 

@@ -17,7 +17,7 @@ class TokenSecurityManager:
     and global configurations rather than internal instance states.
     """
     @staticmethod
-    def create_token(user_id: str, expire_minutes: int, token_type: str) -> Dict[str, Any]:
+    def create_token(user_payload_data: dict, expire_minutes: int, token_type: str) -> Dict[str, Any]:
         """Assembles, signs, and generates a structured JWT cryptographic payload token."""
         now = datetime.datetime.now(datetime.UTC)
         expire = now + datetime.timedelta(minutes=expire_minutes)
@@ -27,9 +27,11 @@ class TokenSecurityManager:
         payload = {
             "exp": int(expire.timestamp()),
             "iat": int(now.timestamp()),
-            "sub": str(user_id),
+            "sub": str(user_payload_data.get("user_id")),
             "token_type": token_type,
-            "jti": token_jti
+            "jti": token_jti,
+            "email": str(user_payload_data.get("email")),
+            "username": str(user_payload_data.get("username"))
         }
 
         token = jwt.encode(
@@ -45,19 +47,19 @@ class TokenSecurityManager:
         }
 
     @staticmethod
-    def create_access_token(user_id: str) -> Dict[str, Any]:
+    def create_access_token(user_payload_data: dict) -> Dict[str, Any]:
         """Generates a short-lived access authorization token wrapper."""
         return TokenSecurityManager.create_token(
-            user_id=user_id,
+            user_payload_data=user_payload_data,
             expire_minutes=settings.tokens.ACCESS_TOKEN_EXPIRE_MINUTES,
             token_type=settings.tokens.ACCESS_TOKEN_TYPE,
         )
 
     @staticmethod
-    def create_refresh_token(user_id: str) -> Dict[str, Any]:
+    def create_refresh_token(user_payload_data: dict) -> Dict[str, Any]:
         """Generates a long-lived session renewal token wrapper."""
         return TokenSecurityManager.create_token(
-            user_id=user_id,
+            user_payload_data=user_payload_data,
             expire_minutes=settings.tokens.REFRESH_TOKEN_EXPIRE_MINUTES,
             token_type=settings.tokens.REFRESH_TOKEN_TYPE,
         )

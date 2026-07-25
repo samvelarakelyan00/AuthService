@@ -17,6 +17,7 @@ import jwt
 # Own Modules
 from core.security import Security
 from core.settings import settings
+from models import User
 from models.users import User
 from schemas.user_schemas import (
     UserCreateSchema,
@@ -134,15 +135,19 @@ class AuthService:
                 detail="Invalid email or password"
             )
 
-        user_id = str(user.user_id)
+        user_payload_data = {
+            "user_id": str(user.user_id),
+            "email": user.email,
+            "username": user.username
+        }
 
         logger.debug("Generating cryptographically signed JWT keys via TokenSecurityManager.")
-        access_data = self.security.tokens.create_access_token(user_id=user_id)
-        refresh_data = self.security.tokens.create_refresh_token(user_id=user_id)
+        access_data = self.security.tokens.create_access_token(user_payload_data=user_payload_data)
+        refresh_data = self.security.tokens.create_refresh_token(user_payload_data=user_payload_data)
         logger.debug("JWT Access and Refresh packages provisioned. Refresh JTI: '%s'", refresh_data["jti"])
 
         # Establish an active whitelist status record inside Redis
-        redis_key = f"auth:refresh:{user_id}:{refresh_data['jti']}"
+        redis_key = f"auth:refresh:{str(user.user_id)}:{refresh_data['jti']}"
         logger.debug("Writing token status validation key to Redis cache layer: '%s'", redis_key)
         await self.redis.set(redis_key, "active", ex=refresh_data["ttl_seconds"])
         logger.debug("Redis state mutation finalized with expiration TTL set to %d seconds.",
@@ -164,7 +169,7 @@ class AuthService:
         logger.debug("Refresh token cookie parameters configured successfully.")
 
         logger.info("Session successfully authorized. Access token returned and Refresh cookie set for User ID '%s'.",
-                    user_id)
+                    str(user.user_id))
 
         return TokenOutSchema(
             access_token=access_data["token"]
