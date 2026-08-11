@@ -41,6 +41,7 @@ class UserCreateSchema(BaseUserSchema):
 
 class UserOutSchema(BaseUserSchema):
     user_id: Annotated[int, Field(gt=0)]
+    is_active: Annotated[bool, Field(ge=0, le=1)]
 
 
 class UserLoginSchema(BaseModel):

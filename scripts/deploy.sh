@@ -1,8 +1,10 @@
 #!/bin/bash
 
+set -e  # Exit on any error
+
 echo "--- Fetching parameters from AWS ---"
 export $(aws ssm get-parameters-by-path \
-    --path "/" \
+    --path "/AuthService/prod/" \
     --recursive \
     --with-decryption \
     --region us-east-1 \
@@ -21,7 +23,7 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "✅ Migrations successful. Starting the application..."
-docker compose up -d fastapi-app db
+docker compose up -d fastapi-app db redis
 
 echo "--- Deployment Status ---"
 docker compose ps
