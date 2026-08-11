@@ -31,7 +31,8 @@ class TokenSecurityManager:
             "token_type": token_type,
             "jti": token_jti,
             "email": str(user_payload_data.get("email")),
-            "username": str(user_payload_data.get("username"))
+            "username": str(user_payload_data.get("username")),
+            "is_active": user_payload_data.get("is_active"),
         }
 
         token = jwt.encode(
@@ -86,3 +87,29 @@ class TokenSecurityManager:
             raise ValueError("Token signature validation breached: Token expired")
         except jwt.InvalidTokenError:
             raise ValueError("Token validation breach: Signature processing integrity error")
+
+    @staticmethod
+    def create_verification_token(user_id: int, email: str, expires_in_hours: int = 72) -> str:
+        """
+        Generates a short-lived JWT token for email verification.
+        Separate from access/refresh tokens to maintain clear separation of concerns.
+        """
+        now = datetime.datetime.now(datetime.UTC)
+        expire = now + datetime.timedelta(hours=expires_in_hours)
+
+        payload = {
+            "exp": int(expire.timestamp()),
+            "iat": int(now.timestamp()),
+            "sub": str(user_id),
+            "email": email,
+            "token_type": "verification",
+            "purpose": "email_verification",
+        }
+
+        token = jwt.encode(
+            payload=payload,
+            key=settings.tokens.SECRET_KEY.get_secret_value(),
+            algorithm=settings.tokens.ALGORITHM,
+        )
+
+        return token

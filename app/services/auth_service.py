@@ -17,7 +17,6 @@ import jwt
 # Own Modules
 from core.security import Security
 from core.settings import settings
-from models import User
 from models.users import User
 from schemas.user_schemas import (
     UserCreateSchema,
@@ -25,6 +24,8 @@ from schemas.user_schemas import (
     UserLoginSchema
 )
 from schemas.token_schemas import TokenOutSchema
+from services.event_service import EventService
+
 
 # Instantiate isolated service tracer bound to this module namespace
 logger = logging.getLogger(__name__)
@@ -89,6 +90,30 @@ class AuthService:
             )
 
         logger.info("User successfully created with assigned ID: '%s'", new_user_model.user_id)
+
+        # Generate email verification token (JWT or secure random)
+        verification_token = self.security.tokens.create_verification_token(
+            user_id=new_user_model.user_id,
+            email=new_user_model.email,
+            expires_in_hours=72,
+        )
+
+        try:
+            await EventService.publish_email_verification(
+                user_id=new_user_model.user_id,
+                email=new_user_model.email,
+                username=new_user_model.username,
+                verification_token=verification_token,  # TBD: generate token
+                expires_in_hours=72,
+            )
+        except Exception as exc:
+            # Log but don't fail the signup – email is non-critical
+            logger.warning(
+                "Failed to send verification email for user %s: %s",
+                new_user_model.user_id,
+                str(exc)
+            )
+
         return UserOutSchema.model_validate(new_user_model)
 
     async def login(self, user_login_data: UserLoginSchema, response: Response) -> TokenOutSchema:
@@ -138,7 +163,8 @@ class AuthService:
         user_payload_data = {
             "user_id": str(user.user_id),
             "email": user.email,
-            "username": user.username
+            "username": user.username,
+            "is_active": user.is_active
         }
 
         logger.debug("Generating cryptographically signed JWT keys via TokenSecurityManager.")

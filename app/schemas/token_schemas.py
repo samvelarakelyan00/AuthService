@@ -22,3 +22,4 @@ class TokenOutSchema(BaseModel):
 class AccessTokenPayloadDataSchema(BaseModel):
     user_id: str
     user_email: EmailStr
+    is_active: bool
