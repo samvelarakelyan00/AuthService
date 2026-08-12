@@ -1,5 +1,6 @@
 from core.security.rate_limiter.rate_limiter import SlidingWindowLog
 
+
 # =============================================================================
 # Default Limiters
 # =============================================================================
@@ -14,9 +15,17 @@ DEFAULT_ACCOUNT_LIMITER = SlidingWindowLog(window_size=60.0, limit=60)
 # More restrictive limits for account creation to prevent abuse
 # Signup IP: 5 signups per 60-second sliding window
 SIGNUP_IP_LIMITER = SlidingWindowLog(window_size=60.0, limit=5)
-
 # Signup Email: 2 signups per 60-second sliding window
 SIGNUP_EMAIL_LIMITER = SlidingWindowLog(window_size=60.0, limit=2)
+
+# =============================================================================
+# Email Verification Limiters
+# =============================================================================
+# More restrictive limits for email verification to prevent brute-force
+# Email Verification IP: 10 attempts per 60-second sliding window
+VERIFY_EMAIL_IP_LIMITER = SlidingWindowLog(window_size=60.0, limit=10)
+# Email Verification Email: 3 attempts per 60-second sliding window
+VERIFY_EMAIL_ACCOUNT_LIMITER = SlidingWindowLog(window_size=60.0, limit=3)
 
 # =============================================================================
 # Login Limiters
@@ -24,7 +33,6 @@ SIGNUP_EMAIL_LIMITER = SlidingWindowLog(window_size=60.0, limit=2)
 # Stricter limits for authentication endpoints to prevent brute force
 # Login IP: 3 attempts per 60-second sliding window
 LOGIN_IP_LIMITER = SlidingWindowLog(window_size=60.0, limit=3)
-
 # Login Email: 3 attempts per 60-second sliding window
 LOGIN_EMAIL_LIMITER = SlidingWindowLog(window_size=60.0, limit=3)
 
@@ -34,7 +42,6 @@ LOGIN_EMAIL_LIMITER = SlidingWindowLog(window_size=60.0, limit=3)
 # Stricter limits for /refresh refresh token endpoint to prevent brute force
 # Refresh Token IP: 3 attempts per 3-second sliding window
 REFRESH_TOKEN_IP_LIMITER = SlidingWindowLog(window_size=3.0, limit=3)
-
 # Refresh Token Email: 3 attempts per 3-second sliding window
 REFRESH_TOKEN_EMAIL_LIMITER = SlidingWindowLog(window_size=3.0, limit=3)
 

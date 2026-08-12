@@ -6,7 +6,8 @@ from core.security.rate_limiter.rate_limit_guard import RateLimitGuard
 from core.security.rate_limiter.rate_limit_profiles import (
     SIGNUP_IP_LIMITER, SIGNUP_EMAIL_LIMITER,
     LOGIN_IP_LIMITER, LOGIN_EMAIL_LIMITER,
-    REFRESH_TOKEN_IP_LIMITER, REFRESH_TOKEN_EMAIL_LIMITER
+    REFRESH_TOKEN_IP_LIMITER, REFRESH_TOKEN_EMAIL_LIMITER,
+    VERIFY_EMAIL_IP_LIMITER, VERIFY_EMAIL_ACCOUNT_LIMITER
 )
 
 
@@ -15,6 +16,16 @@ async def get_signup_rate_limiter(request: Request) -> None:
         endpoint_identifier="signup",
         ip_limiter=SIGNUP_IP_LIMITER,
         account_limiter=SIGNUP_EMAIL_LIMITER
+    )
+
+    await guard(request)
+
+
+async def get_verify_email_rate_limiter(request: Request) -> None:
+    guard = RateLimitGuard(
+        endpoint_identifier="verify_email",
+        ip_limiter=VERIFY_EMAIL_IP_LIMITER,
+        account_limiter=VERIFY_EMAIL_ACCOUNT_LIMITER
     )
 
     await guard(request)

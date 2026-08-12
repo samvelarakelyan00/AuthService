@@ -114,13 +114,7 @@ class AuthService:
                 str(exc)
             )
 
-        # return UserOutSchema.model_validate(new_user_model)
-
-        # TODO tmp added verification token to UserOutSchema for testing -> Remove it in future
-        user_schema = UserOutSchema.model_validate(new_user_model)
-        user_schema.verification_token = verification_token
-
-        return user_schema
+        return UserOutSchema.model_validate(new_user_model)
 
     async def verify_email(self, token: str) -> dict:
         """
@@ -219,9 +213,7 @@ class AuthService:
                 detail="Invalid email or password"
             )
 
-        """
-        Email Verification
-        """
+        # Is the user has verified email (is_active=ture/false), if true -> OK else user's email not verified
         if not user.is_active:
             logger.warning("Login attempt for unverified email: '%s'", user_login_data.email)
             raise HTTPException(

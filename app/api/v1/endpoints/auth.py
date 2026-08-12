@@ -18,6 +18,7 @@ from schemas.token_schemas import TokenOutSchema
 # Rate Limiters
 from api.dependencies.auth_deps.auth_rate_limiters_dep import (
     get_signup_rate_limiter,
+    get_verify_email_rate_limiter,
     get_login_rate_limiter,
     get_refresh_token_rate_limiter
 )
@@ -43,6 +44,7 @@ async def signup(user_create_data: UserCreateSchema,
 async def verify_email(
     token: str,
     user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
+    _: Annotated[None, Depends(get_verify_email_rate_limiter)]
 ) -> dict:
     """
     Verify user's email address using a JWT verification token.
