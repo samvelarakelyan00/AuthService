@@ -90,10 +90,6 @@ class TokenSecurityManager:
 
     @staticmethod
     def create_verification_token(user_id: int, email: str, expires_in_hours: int = 72) -> str:
-        """
-        Generates a short-lived JWT token for email verification.
-        Separate from access/refresh tokens to maintain clear separation of concerns.
-        """
         now = datetime.datetime.now(datetime.UTC)
         expire = now + datetime.timedelta(hours=expires_in_hours)
 
@@ -103,13 +99,11 @@ class TokenSecurityManager:
             "sub": str(user_id),
             "email": email,
             "token_type": "verification",
-            "purpose": "email_verification",
+            "purpose": "email_verification",  # ✅ Important
         }
 
-        token = jwt.encode(
+        return jwt.encode(
             payload=payload,
             key=settings.tokens.SECRET_KEY.get_secret_value(),
             algorithm=settings.tokens.ALGORITHM,
         )
-
-        return token

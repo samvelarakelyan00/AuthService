@@ -114,7 +114,81 @@ class AuthService:
                 str(exc)
             )
 
-        return UserOutSchema.model_validate(new_user_model)
+        # return UserOutSchema.model_validate(new_user_model)
+
+        # TODO tmp added verification token to UserOutSchema for testing -> Remove it in future
+        user_schema = UserOutSchema.model_validate(new_user_model)
+        user_schema.verification_token = verification_token
+
+        return user_schema
+
+    async def verify_email(self, token: str) -> dict:
+        """
+        Verifies a user's email address using a JWT verification token.
+        Sets is_active=True and returns a success message.
+        """
+        logger.info("Processing email verification request.")
+
+        try:
+            # Verify the token (expected_type="verification")
+            payload = self.security.tokens.verify_token(token, expected_type="verification")
+        except ValueError as err:
+            logger.warning("Email verification failed: %s", str(err))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid or expired verification token: {str(err)}"
+            )
+
+        # Extract user_id from token payload
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid token payload: missing user identifier"
+            )
+
+        try:
+            user_id = int(user_id_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid user identifier format in token"
+            )
+
+        # Check if the token purpose is correct
+        if payload.get("purpose") != "email_verification":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid token purpose"
+            )
+
+        # Fetch user from database
+        stmt = select(User).where(User.user_id == user_id)
+        result = await self.db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            logger.warning("Email verification failed: User not found for ID '%s'", user_id)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+
+        # Check if already verified
+        if user.is_active:
+            logger.info("User ID '%s' already verified. No action needed.", user_id)
+            return {"message": "Email already verified"}
+
+        # Update user to active
+        user.is_active = True
+        await self.db.commit()
+        logger.info("User ID '%s' successfully verified via email.", user_id)
+
+        return {
+            "message": "Email verified successfully",
+            "user_id": user_id,
+            "email": user.email,
+        }
 
     async def login(self, user_login_data: UserLoginSchema, response: Response) -> TokenOutSchema:
         """
@@ -143,6 +217,16 @@ class AuthService:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid email or password"
+            )
+
+        """
+        Email Verification
+        """
+        if not user.is_active:
+            logger.warning("Login attempt for unverified email: '%s'", user_login_data.email)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Email not verified. Please verify your email before logging in."
             )
 
         logger.debug("User record found. Offloading Argon2 verification to run_in_threadpool...")

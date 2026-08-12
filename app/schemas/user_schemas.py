@@ -41,7 +41,10 @@ class UserCreateSchema(BaseUserSchema):
 
 class UserOutSchema(BaseUserSchema):
     user_id: Annotated[int, Field(gt=0)]
-    is_active: Annotated[bool, Field(ge=0, le=1)]
+    is_active: Annotated[bool, Field(default=False)]
+
+    # TODO tmp added verification token to UserOutSchema for testing -> Remove it in future
+    verification_token: str | None = Field(default=None)
 
 
 class UserLoginSchema(BaseModel):

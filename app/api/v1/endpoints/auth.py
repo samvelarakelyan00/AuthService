@@ -38,6 +38,19 @@ async def signup(user_create_data: UserCreateSchema,
     return new_user
 
 
+@user_auth_router.get("/verify-email/{token}",
+                      status_code=status.HTTP_200_OK)
+async def verify_email(
+    token: str,
+    user_auth_service: Annotated[AuthService, Depends(get_auth_service)],
+) -> dict:
+    """
+    Verify user's email address using a JWT verification token.
+    The token is sent via email and contains the user_id and expiration.
+    """
+    return await user_auth_service.verify_email(token)
+
+
 @user_auth_router.post("/login",
                        status_code=status.HTTP_200_OK,
                        response_model=TokenOutSchema)
