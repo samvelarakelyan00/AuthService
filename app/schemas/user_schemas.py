@@ -1,5 +1,6 @@
 import re
 from typing import Annotated
+from datetime import datetime
 
 from pydantic import BaseModel, Field, EmailStr, AfterValidator
 
@@ -42,6 +43,7 @@ class UserCreateSchema(BaseUserSchema):
 class UserOutSchema(BaseUserSchema):
     user_id: Annotated[int, Field(gt=0)]
     is_active: Annotated[bool, Field(default=False)]
+    created_at: Annotated[datetime, Field(default=datetime.now())]
 
 
 class UserLoginSchema(BaseModel):

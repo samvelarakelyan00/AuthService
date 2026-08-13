@@ -7,6 +7,9 @@ Add to the users table roles and is_active, and store these data to access token
 email verification also (is_active).
 """
 
+"""
+!!!!!!!!!!!!! sync the datetime for different timezones for users -> created_at
+"""
 
 """
 🎯 Next Steps for Your Auth Service
@@ -14,8 +17,12 @@ Now that Kafka is fully integrated and working, here's what you should consider 
 
 Priority	Task	Status
 1	Email Service (Consumer) – Write a separate microservice that consumes auth.email.events and sends verification emails.	🔴 Needed
-2	Verify Email Endpoint – Create POST /api/v1/auth/verify-email?token=... to validate the token and set is_active=True.	🔴 Needed
+
+✅ done
+2	Verify Email Endpoint – Create GET /api/v1/auth/verify-email?token=... to validate the token and set is_active=True.	🔴 Needed
+✅ done
 3	Login Check for is_active – Add validation to ensure is_active=True before allowing login.	🔴 Needed
+
 4	Resend Verification Email – Allow users to request a new verification link.	🔴 Needed
 5	Password Reset Flow – Similar event pattern for password reset.	🔴 Needed
 """
