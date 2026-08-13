@@ -99,7 +99,7 @@ class TokenSecurityManager:
             "sub": str(user_id),
             "email": email,
             "token_type": "verification",
-            "purpose": "email_verification",  # ✅ Important
+            "purpose": "email_verification"
         }
 
         return jwt.encode(

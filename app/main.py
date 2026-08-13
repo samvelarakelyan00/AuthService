@@ -18,8 +18,11 @@ from sqlalchemy import text
 from db.session import db_manager
 from db.redis_connection import redis_manager
 from core.logger import initialize_system_logging
+from core.kafka.connection import kafka_manager
+from core.kafka.topics import KafkaTopics
 # Routers
 from api.v1 import v1_router
+
 
 
 @asynccontextmanager
@@ -70,6 +73,22 @@ async def lifespan(app: FastAPI):
         )
         raise error
 
+    # 5. Initialize Kafka (NEW)
+    try:
+        await kafka_manager.initialize()
+        logger.info("Kafka connection initialized successfully.")
+
+        # Optional: Create topics if they don't exist (requires admin client)
+        # await create_kafka_topics_if_not_exist()
+    except Exception as error:
+        logger.critical(
+            "Kafka connection verification failed: %s",
+            error,
+            exc_info=True
+        )
+        # Fail fast – Kafka is critical for email verification
+        raise error
+
     logger.info("All components are healthy. Microservice startup complete.")
     yield  # Application is running and accepting active network traffic
 
@@ -83,6 +102,9 @@ async def lifespan(app: FastAPI):
     await redis_manager.client.close()
     await redis_manager.pool.disconnect()
     logger.info("Redis non-blocking operational connections safely disconnected.")
+
+    await kafka_manager.shutdown()
+    logger.info("Kafka connections gracefully closed.")
 
     logger.info("All infrastructure resources safely released. System halt completed.")
 

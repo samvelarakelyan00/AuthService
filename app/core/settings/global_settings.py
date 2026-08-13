@@ -13,6 +13,7 @@ from .redis_settings import RedisSettings
 from .tokens_settings import TokenSettings
 from .logging_settings import LoggingSettings
 from .password_settings import PasswordSettings
+from .kafka_settings import KafkaSettings
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # /AuthService/app/
@@ -70,6 +71,14 @@ class GlobalSettings(BaseSettings):
     REDIS_REFRESH_LIMIT_TIMES: int = 10
     REDIS_REFRESH_LIMIT_SECONDS: int = 60
 
+    # === Kafka ===
+    KAFKA_BOOTSTRAP_SERVERS: str = Field(default="localhost:9092", validation_alias="KAFKA_BOOTSTRAP_SERVERS")
+    KAFKA_CLIENT_ID: str = Field(default="auth-service", validation_alias="KAFKA_CLIENT_ID")
+    KAFKA_GROUP_ID: str = Field(default="auth-service-group", validation_alias="KAFKA_GROUP_ID")
+    KAFKA_ENABLE_AUTO_COMMIT: bool = Field(default=False, validation_alias="KAFKA_ENABLE_AUTO_COMMIT")
+    KAFKA_AUTO_OFFSET_RESET: str = Field(default="earliest", validation_alias="KAFKA_AUTO_OFFSET_RESET")
+    KAFKA_ACKS: int = Field(default=-1, validation_alias="KAFKA_ACKS")  # ✅ Changed from 1 to -1
+    KAFKA_COMPRESSION_TYPE: str = Field(default="gzip", validation_alias="KAFKA_COMPRESSION_TYPE")
 
     DEBUG: bool = False
 
@@ -144,4 +153,21 @@ class GlobalSettings(BaseSettings):
             LOG_DIR=Path(self.LOG_DIR),
             LOG_MAX_BYTES=self.LOG_MAX_BYTES,
             LOG_BACKUP_COUNT=self.LOG_BACKUP_COUNT
+        )
+
+    @computed_field
+    @property
+    def kafka(self) -> KafkaSettings:
+        """
+        Exposes structured validation namespace for Kafka connections.
+        Usage: settings.kafka.BOOTSTRAP_SERVERS
+        """
+        return KafkaSettings(
+            BOOTSTRAP_SERVERS=self.KAFKA_BOOTSTRAP_SERVERS,
+            CLIENT_ID=self.KAFKA_CLIENT_ID,
+            GROUP_ID=self.KAFKA_GROUP_ID,
+            ENABLE_AUTO_COMMIT=self.KAFKA_ENABLE_AUTO_COMMIT,
+            AUTO_OFFSET_RESET=self.KAFKA_AUTO_OFFSET_RESET,
+            ACKS=self.KAFKA_ACKS,
+            COMPRESSION_TYPE=self.KAFKA_COMPRESSION_TYPE,
         )
