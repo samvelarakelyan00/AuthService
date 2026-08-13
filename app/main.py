@@ -1,28 +1,24 @@
-"""
-Main Application Entry Point.
-
-Configures the FastAPI core runtime instance, hooks into the infrastructure
-lifespan manager, applies routes, and bootstraps industrial logging targets.
-"""
-
 # Standard libs
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
 # Non-Standard libs
-import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import text
 
 # Own Modules
-from db.session import db_manager
-from db.redis_connection import redis_manager
+from core.settings import settings
 from core.logger import initialize_system_logging
 from core.kafka.connection import kafka_manager
-from core.kafka.topics import KafkaTopics
-# Routers
+from db.session import db_manager
+from db.redis_connection import redis_manager
+from tasks.cleanup_unverified_users import cleanup_unverified_users
 from api.v1 import v1_router
 
+
+# Instantiate isolated service tracer bound to this module namespace
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -37,7 +33,6 @@ async def lifespan(app: FastAPI):
     initialize_system_logging()
 
     # 2. Instantiate the explicit main system logger now that configuration is safely active
-    logger = logging.getLogger("main")
     logger.info("Application logging subsystem successfully attached to ASGI lifecycle.")
     logger.info("Initializing application infrastructure targets...")
 
@@ -73,26 +68,55 @@ async def lifespan(app: FastAPI):
         )
         raise error
 
-    # 5. Initialize Kafka (NEW)
+    # 5. Initialize Kafka
     try:
         await kafka_manager.initialize()
         logger.info("Kafka connection initialized successfully.")
-
-        # Optional: Create topics if they don't exist (requires admin client)
-        # await create_kafka_topics_if_not_exist()
     except Exception as error:
         logger.critical(
             "Kafka connection verification failed: %s",
             error,
             exc_info=True
         )
-        # Fail fast – Kafka is critical for email verification
         raise error
+
+    # 6. Start background cleanup task
+    cleanup_interval_seconds = settings.CLEANUP_INTERVAL_DAYS * 24 * 60 * 60
+
+    async def periodic_cleanup():
+        while True:
+            try:
+                await asyncio.sleep(cleanup_interval_seconds)
+                await cleanup_unverified_users()
+            except asyncio.CancelledError:
+                logger.info("Cleanup task cancelled.")
+                break
+            except Exception as error:
+                logger.error(
+                    "Error in cleanup task: %s",
+                    str(error),
+                    exc_info=True
+                )
+
+    app.state.cleanup_task = asyncio.create_task(periodic_cleanup())
+    logger.info(
+        "User cleanup task scheduled (runs every %d days).",
+        settings.CLEANUP_INTERVAL_DAYS
+    )
 
     logger.info("All components are healthy. Microservice startup complete.")
     yield  # Application is running and accepting active network traffic
 
     logger.warning("Initiating graceful infrastructure teardown sequencing...")
+
+    # Cancel cleanup task on shutdown
+    if hasattr(app.state, "cleanup_task"):
+        app.state.cleanup_task.cancel()
+        try:
+            await app.state.cleanup_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("User cleanup task cancelled.")
 
     # Safely close all active connections held inside the SQLAlchemy engine pool
     await db_manager.engine.dispose()
@@ -103,6 +127,7 @@ async def lifespan(app: FastAPI):
     await redis_manager.pool.disconnect()
     logger.info("Redis non-blocking operational connections safely disconnected.")
 
+    # Shutdown Kafka
     await kafka_manager.shutdown()
     logger.info("Kafka connections gracefully closed.")
 

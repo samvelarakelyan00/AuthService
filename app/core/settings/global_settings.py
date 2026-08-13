@@ -80,6 +80,11 @@ class GlobalSettings(BaseSettings):
     KAFKA_ACKS: int = Field(default=-1, validation_alias="KAFKA_ACKS")  # ✅ Changed from 1 to -1
     KAFKA_COMPRESSION_TYPE: str = Field(default="gzip", validation_alias="KAFKA_COMPRESSION_TYPE")
 
+    CLEANUP_INTERVAL_DAYS: int = Field(
+        default=4,
+        validation_alias="CLEANUP_INTERVAL_DAYS"
+    )
+
     DEBUG: bool = False
 
     model_config = SettingsConfigDict(
